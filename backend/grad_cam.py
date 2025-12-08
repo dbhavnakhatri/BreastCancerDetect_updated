@@ -437,14 +437,22 @@ def create_gradcam_visualization(original_image, preprocessed_img, model, confid
         heatmap_only_image = Image.fromarray(buf[:, :, :3])
         plt.close(fig)
         
-        # Generate bounding boxes for detected regions
-        boxes = detect_bounding_boxes(heatmap, original_image.size, threshold=0.5, min_area=50, max_regions=5)
-        bbox_image = None
+        # Generate bounding boxes for detected regions (very low threshold for sparse heatmaps)
+        boxes = detect_bounding_boxes(heatmap, original_image.size, threshold=0.3, min_area=1, max_regions=5)
+        
         if boxes:
-            bbox_image = draw_bounding_boxes(original_image, boxes, box_color='#FF0000', line_width=4)
+            bbox_image = draw_bounding_boxes(original_image, boxes, box_color='#FF0000', line_width=3)
             print(f"DEBUG: Detected {len(boxes)} suspicious regions")
         else:
-            print("DEBUG: No distinct high-activation regions detected")
+            # No regions detected - return original image with "No regions" text
+            print("DEBUG: No distinct high-activation regions detected, returning original with message")
+            bbox_image = original_image.copy()
+            draw = ImageDraw.Draw(bbox_image)
+            try:
+                font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 16)
+            except:
+                font = ImageFont.load_default()
+            draw.text((10, 10), "No suspicious regions detected", fill='green', font=font)
         
         # Extract detailed findings
         detailed_findings = extract_detailed_findings(heatmap, boxes, original_image.size, confidence)
