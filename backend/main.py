@@ -310,15 +310,29 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    """Simple health check + model load status."""
-    try:
-        _ = get_model()
-        return {"status": "ok", "model_loaded": True}
-    except Exception as exc:
-        return JSONResponse(
-            status_code=500,
-            content={"status": "error", "message": str(exc)},
-        )
+    """Simple health check - returns ok if server is running."""
+    model_status = "not_loaded"
+    model_error = None
+    
+    # Check if model file exists
+    if MODEL_PATH.exists():
+        try:
+            _ = get_model()
+            model_status = "loaded"
+        except Exception as exc:
+            model_status = "error"
+            model_error = str(exc)
+    else:
+        model_status = "missing"
+        model_error = f"Model file not found at {MODEL_PATH}"
+    
+    # Health check passes as long as server is running
+    return {
+        "status": "ok",
+        "model_status": model_status,
+        "model_error": model_error,
+        "model_path": str(MODEL_PATH)
+    }
 
 
 @app.post("/analyze")
