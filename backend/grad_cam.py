@@ -68,31 +68,9 @@ def make_gradcam_heatmap(img_array, model, last_conv_layer_index, pred_index=Non
     
     return heatmap.numpy()
 
-def create_tissue_mask(img_array, threshold=15):
-    """
-    Create a mask identifying tissue (non-background) areas.
-    
-    Args:
-        img_array: Image as numpy array
-        threshold: Pixel intensity threshold to distinguish tissue from background
-    
-    Returns:
-        Binary mask where True = tissue area
-    """
-    if len(img_array.shape) == 3:
-        gray = np.mean(img_array, axis=2)
-    else:
-        gray = img_array
-    
-    # Tissue is where pixel intensity is above threshold (not black background)
-    mask = gray > threshold
-    return mask
-
-
 def create_heatmap_overlay(original_image, heatmap, alpha=0.4, colormap='jet'):
     """
     Create an overlay of the heatmap on the original image.
-    Only shows heatmap on tissue areas, not on black background.
     
     Args:
         original_image: PIL Image object
@@ -112,12 +90,6 @@ def create_heatmap_overlay(original_image, heatmap, alpha=0.4, colormap='jet'):
     
     heatmap_resized = heatmap_resized.astype(np.float32) / 255.0
     
-    # Create tissue mask to avoid showing heatmap on black background
-    tissue_mask = create_tissue_mask(img_array, threshold=15)
-    
-    # Zero out heatmap in background areas
-    heatmap_resized = heatmap_resized * tissue_mask
-    
     cmap = cm.get_cmap(colormap)
     heatmap_colored = cmap(heatmap_resized)
     heatmap_colored = (heatmap_colored[:, :, :3] * 255).astype(np.uint8)
@@ -127,12 +99,7 @@ def create_heatmap_overlay(original_image, heatmap, alpha=0.4, colormap='jet'):
     elif img_array.shape[2] == 4:
         img_array = img_array[:, :, :3]
     
-    # Only apply overlay where there is tissue
-    overlay = img_array.copy().astype(np.float32)
-    tissue_mask_3d = np.stack([tissue_mask] * 3, axis=-1)
-    overlay = np.where(tissue_mask_3d, 
-                       (1 - alpha) * img_array + alpha * heatmap_colored,
-                       img_array)
+    overlay = (1 - alpha) * img_array + alpha * heatmap_colored
     overlay = np.clip(overlay, 0, 255).astype(np.uint8)
     
     return Image.fromarray(overlay)
@@ -152,31 +119,19 @@ def get_last_conv_layer_index(model):
         return conv_layer_indices[-1]
     return None
 
-def detect_bounding_boxes(heatmap, original_image_size, threshold=0.6, min_area=100, tissue_mask=None):
+def detect_bounding_boxes(heatmap, original_image_size, threshold=0.6, min_area=100):
     """
     Detect bounding boxes around high-activation regions in the heatmap.
-    Only detects within tissue areas if tissue_mask is provided.
     
     Args:
         heatmap: Normalized heatmap array (values 0-1)
         original_image_size: Tuple of (width, height) of original image
         threshold: Activation threshold (0-1) for detecting regions
         min_area: Minimum area in pixels for a region to be considered
-        tissue_mask: Optional binary mask of tissue area (same size as original image)
     
     Returns:
         List of bounding boxes [(x1, y1, x2, y2, confidence), ...]
     """
-    # If tissue mask provided, resize it to heatmap size and apply
-    if tissue_mask is not None:
-        # Resize tissue mask to heatmap dimensions
-        tissue_mask_resized = np.array(Image.fromarray(tissue_mask.astype(np.uint8) * 255).resize(
-            (heatmap.shape[1], heatmap.shape[0]),
-            Image.NEAREST
-        )) > 127
-        # Zero out heatmap in background areas
-        heatmap = heatmap * tissue_mask_resized
-    
     # Threshold the heatmap to get high-activation regions
     binary_mask = (heatmap > threshold).astype(np.uint8)
     
@@ -455,10 +410,6 @@ def create_gradcam_visualization(original_image, preprocessed_img, model, confid
         
         print(f"DEBUG: Heatmap generated successfully, shape: {heatmap.shape}")
         
-        # Create tissue mask to filter out background detections
-        img_array = np.array(original_image)
-        tissue_mask = create_tissue_mask(img_array, threshold=15)
-        
         overlay_image = create_heatmap_overlay(original_image, heatmap, alpha=0.5)
         print("DEBUG: Overlay created successfully")
         
@@ -477,8 +428,8 @@ def create_gradcam_visualization(original_image, preprocessed_img, model, confid
         heatmap_only_image = Image.fromarray(buf[:, :, :3])
         plt.close(fig)
         
-        # Generate bounding boxes for detected regions (only within tissue area)
-        boxes = detect_bounding_boxes(heatmap, original_image.size, threshold=0.6, min_area=100, tissue_mask=tissue_mask)
+        # Generate bounding boxes for detected regions
+        boxes = detect_bounding_boxes(heatmap, original_image.size, threshold=0.6, min_area=100)
         bbox_image = None
         if boxes:
             bbox_image = draw_bounding_boxes(original_image, boxes, box_color='#FF0000', line_width=4)
