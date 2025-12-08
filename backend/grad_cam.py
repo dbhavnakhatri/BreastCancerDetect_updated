@@ -119,7 +119,7 @@ def get_last_conv_layer_index(model):
         return conv_layer_indices[-1]
     return None
 
-def detect_bounding_boxes(heatmap, original_image_size, threshold=0.5, min_area=50, max_regions=5):
+def detect_bounding_boxes(heatmap, original_image_size, threshold=0.6, min_area=100):
     """
     Detect bounding boxes around high-activation regions in the heatmap.
     
@@ -127,8 +127,7 @@ def detect_bounding_boxes(heatmap, original_image_size, threshold=0.5, min_area=
         heatmap: Normalized heatmap array (values 0-1)
         original_image_size: Tuple of (width, height) of original image
         threshold: Activation threshold (0-1) for detecting regions
-        min_area: Minimum area in heatmap pixels for a region to be considered
-        max_regions: Maximum number of regions to return
+        min_area: Minimum area in pixels for a region to be considered
     
     Returns:
         List of bounding boxes [(x1, y1, x2, y2, confidence), ...]
@@ -150,20 +149,18 @@ def detect_bounding_boxes(heatmap, original_image_size, threshold=0.5, min_area=
         # Get coordinates of this region
         region_coords = np.where(labeled_array == region_id)
         
-        # Skip very small regions (in heatmap space)
-        if len(region_coords[0]) < min_area:
+        if len(region_coords[0]) < min_area / (scale_x * scale_y):
             continue
         
         # Get bounding box coordinates in heatmap space
         y_min, y_max = region_coords[0].min(), region_coords[0].max()
         x_min, x_max = region_coords[1].min(), region_coords[1].max()
         
-        # Scale to original image size with padding
-        padding = 10
-        x1 = max(0, int(x_min * scale_x) - padding)
-        y1 = max(0, int(y_min * scale_y) - padding)
-        x2 = min(orig_w, int(x_max * scale_x) + padding)
-        y2 = min(orig_h, int(y_max * scale_y) + padding)
+        # Scale to original image size
+        x1 = int(x_min * scale_x)
+        y1 = int(y_min * scale_y)
+        x2 = int(x_max * scale_x)
+        y2 = int(y_max * scale_y)
         
         # Calculate confidence (average activation in this region)
         region_mask = (labeled_array == region_id)
@@ -171,11 +168,9 @@ def detect_bounding_boxes(heatmap, original_image_size, threshold=0.5, min_area=
         
         boxes.append((x1, y1, x2, y2, confidence))
     
-    # Sort by confidence and return top regions
-    boxes.sort(key=lambda x: x[4], reverse=True)
-    return boxes[:max_regions]
+    return boxes
 
-def draw_bounding_boxes(image, boxes, box_color='red', text_color='white', line_width=2):
+def draw_bounding_boxes(image, boxes, box_color='red', text_color='white', line_width=3):
     """
     Draw bounding boxes on an image.
     
@@ -193,33 +188,29 @@ def draw_bounding_boxes(image, boxes, box_color='red', text_color='white', line_
     draw = ImageDraw.Draw(img_copy)
     
     try:
-        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 12)
+        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 16)
     except:
-        try:
-            font = ImageFont.truetype("arial.ttf", 12)
-        except:
-            font = ImageFont.load_default()
+        font = ImageFont.load_default()
     
     for i, (x1, y1, x2, y2, confidence) in enumerate(boxes):
         # Draw rectangle
         draw.rectangle([x1, y1, x2, y2], outline=box_color, width=line_width)
         
-        # Create label
-        label = f"{confidence*100:.0f}%"
+        # Draw label - position above or inside box depending on space
+        label = f"Region {i+1}: {confidence*100:.1f}%"
         
-        # Position label inside top-left of box
-        label_x = x1 + 3
-        label_y = y1 + 3
+        # Check if there's enough space above the box (need ~25 pixels)
+        if y1 >= 25:
+            label_y = y1 - 20
+        else:
+            # Not enough space above, put it inside the box at the top
+            label_y = y1 + 5
         
-        # Draw label background
-        text_bbox = draw.textbbox((label_x, label_y), label, font=font)
-        draw.rectangle(
-            [text_bbox[0] - 2, text_bbox[1] - 1, text_bbox[2] + 2, text_bbox[3] + 1],
-            fill=box_color
-        )
+        bbox = draw.textbbox((x1, label_y), label, font=font)
+        draw.rectangle([bbox[0]-2, bbox[1]-2, bbox[2]+2, bbox[3]+2], fill=box_color)
         
         # Draw label text
-        draw.text((label_x, label_y), label, fill=text_color, font=font)
+        draw.text((x1, label_y), label, fill=text_color, font=font)
     
     return img_copy
 
@@ -437,22 +428,14 @@ def create_gradcam_visualization(original_image, preprocessed_img, model, confid
         heatmap_only_image = Image.fromarray(buf[:, :, :3])
         plt.close(fig)
         
-        # Generate bounding boxes for detected regions (very low threshold for sparse heatmaps)
-        boxes = detect_bounding_boxes(heatmap, original_image.size, threshold=0.3, min_area=1, max_regions=5)
-        
+        # Generate bounding boxes for detected regions
+        boxes = detect_bounding_boxes(heatmap, original_image.size, threshold=0.6, min_area=100)
+        bbox_image = None
         if boxes:
-            bbox_image = draw_bounding_boxes(original_image, boxes, box_color='#FF0000', line_width=3)
+            bbox_image = draw_bounding_boxes(original_image, boxes, box_color='#FF0000', line_width=4)
             print(f"DEBUG: Detected {len(boxes)} suspicious regions")
         else:
-            # No regions detected - return original image with "No regions" text
-            print("DEBUG: No distinct high-activation regions detected, returning original with message")
-            bbox_image = original_image.copy()
-            draw = ImageDraw.Draw(bbox_image)
-            try:
-                font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 16)
-            except:
-                font = ImageFont.load_default()
-            draw.text((10, 10), "No suspicious regions detected", fill='green', font=font)
+            print("DEBUG: No distinct high-activation regions detected")
         
         # Extract detailed findings
         detailed_findings = extract_detailed_findings(heatmap, boxes, original_image.size, confidence)
