@@ -119,7 +119,7 @@ def get_last_conv_layer_index(model):
         return conv_layer_indices[-1]
     return None
 
-def detect_bounding_boxes(heatmap, original_image_size, threshold=0.75, min_area=500, max_regions=5):
+def detect_bounding_boxes(heatmap, original_image_size, threshold=0.5, min_area=50, max_regions=5):
     """
     Detect bounding boxes around high-activation regions in the heatmap.
     
@@ -127,7 +127,7 @@ def detect_bounding_boxes(heatmap, original_image_size, threshold=0.75, min_area
         heatmap: Normalized heatmap array (values 0-1)
         original_image_size: Tuple of (width, height) of original image
         threshold: Activation threshold (0-1) for detecting regions
-        min_area: Minimum area in pixels for a region to be considered
+        min_area: Minimum area in heatmap pixels for a region to be considered
         max_regions: Maximum number of regions to return
     
     Returns:
@@ -146,14 +146,12 @@ def detect_bounding_boxes(heatmap, original_image_size, threshold=0.75, min_area
     scale_x = orig_w / heatmap_w
     scale_y = orig_h / heatmap_h
     
-    # Minimum size in heatmap coordinates
-    min_heatmap_area = min_area / (scale_x * scale_y)
-    
     for region_id in range(1, num_features + 1):
         # Get coordinates of this region
         region_coords = np.where(labeled_array == region_id)
         
-        if len(region_coords[0]) < min_heatmap_area:
+        # Skip very small regions (in heatmap space)
+        if len(region_coords[0]) < min_area:
             continue
         
         # Get bounding box coordinates in heatmap space
@@ -161,15 +159,11 @@ def detect_bounding_boxes(heatmap, original_image_size, threshold=0.75, min_area
         x_min, x_max = region_coords[1].min(), region_coords[1].max()
         
         # Scale to original image size with padding
-        padding = 5
+        padding = 10
         x1 = max(0, int(x_min * scale_x) - padding)
         y1 = max(0, int(y_min * scale_y) - padding)
         x2 = min(orig_w, int(x_max * scale_x) + padding)
         y2 = min(orig_h, int(y_max * scale_y) + padding)
-        
-        # Skip if box is too small
-        if (x2 - x1) < 20 or (y2 - y1) < 20:
-            continue
         
         # Calculate confidence (average activation in this region)
         region_mask = (labeled_array == region_id)
@@ -181,9 +175,9 @@ def detect_bounding_boxes(heatmap, original_image_size, threshold=0.75, min_area
     boxes.sort(key=lambda x: x[4], reverse=True)
     return boxes[:max_regions]
 
-def draw_bounding_boxes(image, boxes, box_color='red', text_color='white', line_width=3):
+def draw_bounding_boxes(image, boxes, box_color='red', text_color='white', line_width=2):
     """
-    Draw bounding boxes on an image with non-overlapping labels.
+    Draw bounding boxes on an image.
     
     Args:
         image: PIL Image
@@ -197,64 +191,30 @@ def draw_bounding_boxes(image, boxes, box_color='red', text_color='white', line_
     """
     img_copy = image.copy()
     draw = ImageDraw.Draw(img_copy)
-    img_width, img_height = image.size
     
     try:
-        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 14)
+        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 12)
     except:
         try:
-            font = ImageFont.truetype("arial.ttf", 14)
+            font = ImageFont.truetype("arial.ttf", 12)
         except:
             font = ImageFont.load_default()
     
-    used_label_positions = []  # Track used positions to avoid overlap
-    
     for i, (x1, y1, x2, y2, confidence) in enumerate(boxes):
-        # Draw rectangle with thicker border
+        # Draw rectangle
         draw.rectangle([x1, y1, x2, y2], outline=box_color, width=line_width)
         
         # Create label
-        label = f"R{i+1}: {confidence*100:.0f}%"
+        label = f"{confidence*100:.0f}%"
         
-        # Get text size
-        text_bbox = draw.textbbox((0, 0), label, font=font)
-        text_width = text_bbox[2] - text_bbox[0]
-        text_height = text_bbox[3] - text_bbox[1]
-        
-        # Try different label positions to avoid overlap
-        positions = [
-            (x1, y1 - text_height - 5),  # Above box
-            (x2 + 5, y1),                 # Right of box
-            (x1, y2 + 5),                 # Below box
-            (x1 - text_width - 5, y1),   # Left of box
-            (x1 + 3, y1 + 3),            # Inside top-left
-        ]
-        
-        label_x, label_y = x1, y1 - text_height - 5  # Default
-        
-        for pos_x, pos_y in positions:
-            # Check bounds
-            if pos_x < 0 or pos_y < 0 or pos_x + text_width > img_width or pos_y + text_height > img_height:
-                continue
-            
-            # Check overlap with existing labels
-            overlaps = False
-            for used_x, used_y, used_w, used_h in used_label_positions:
-                if not (pos_x + text_width < used_x or pos_x > used_x + used_w or
-                        pos_y + text_height < used_y or pos_y > used_y + used_h):
-                    overlaps = True
-                    break
-            
-            if not overlaps:
-                label_x, label_y = pos_x, pos_y
-                break
-        
-        # Record this label position
-        used_label_positions.append((label_x, label_y, text_width, text_height))
+        # Position label inside top-left of box
+        label_x = x1 + 3
+        label_y = y1 + 3
         
         # Draw label background
+        text_bbox = draw.textbbox((label_x, label_y), label, font=font)
         draw.rectangle(
-            [label_x - 2, label_y - 2, label_x + text_width + 4, label_y + text_height + 2],
+            [text_bbox[0] - 2, text_bbox[1] - 1, text_bbox[2] + 2, text_bbox[3] + 1],
             fill=box_color
         )
         
@@ -477,8 +437,8 @@ def create_gradcam_visualization(original_image, preprocessed_img, model, confid
         heatmap_only_image = Image.fromarray(buf[:, :, :3])
         plt.close(fig)
         
-        # Generate bounding boxes for detected regions (stricter thresholds)
-        boxes = detect_bounding_boxes(heatmap, original_image.size, threshold=0.75, min_area=500, max_regions=5)
+        # Generate bounding boxes for detected regions
+        boxes = detect_bounding_boxes(heatmap, original_image.size, threshold=0.5, min_area=50, max_regions=5)
         bbox_image = None
         if boxes:
             bbox_image = draw_bounding_boxes(original_image, boxes, box_color='#FF0000', line_width=4)
