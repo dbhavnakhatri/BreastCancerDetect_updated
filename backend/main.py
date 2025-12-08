@@ -120,7 +120,7 @@ def _load_weights_from_keras_file(model: keras.Model, keras_path: Path):
 
 def preprocess_image(image: Image.Image) -> np.ndarray:
     """Streamlit code se hi liya hai: resize 224x224, normalize, RGB fix."""
-    img = image.resize((224, 224))
+    img = image.resize((224, 224), Image.LANCZOS)
     img_array = np.array(img)
 
     if img_array.ndim == 2:  # grayscale
