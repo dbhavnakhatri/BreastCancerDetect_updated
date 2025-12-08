@@ -477,14 +477,17 @@ def create_gradcam_visualization(original_image, preprocessed_img, model, confid
         heatmap_only_image = Image.fromarray(buf[:, :, :3])
         plt.close(fig)
         
-        # Generate bounding boxes for detected regions (only within tissue area)
-        boxes = detect_bounding_boxes(heatmap, original_image.size, threshold=0.6, min_area=100, tissue_mask=tissue_mask)
+        # Generate bounding boxes for detected regions 
+        # Use original heatmap without tissue mask for better detection
+        boxes = detect_bounding_boxes(heatmap, original_image.size, threshold=0.6, min_area=100, tissue_mask=None)
         bbox_image = None
         if boxes:
             bbox_image = draw_bounding_boxes(original_image, boxes, box_color='#FF0000', line_width=4)
             print(f"DEBUG: Detected {len(boxes)} suspicious regions")
         else:
-            print("DEBUG: No distinct high-activation regions detected")
+            # Fallback: show original image if no regions detected
+            bbox_image = original_image.copy()
+            print("DEBUG: No distinct high-activation regions detected, showing original")
         
         # Extract detailed findings
         detailed_findings = extract_detailed_findings(heatmap, boxes, original_image.size, confidence)
