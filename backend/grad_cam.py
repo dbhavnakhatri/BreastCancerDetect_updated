@@ -152,7 +152,7 @@ def get_last_conv_layer_index(model):
         return conv_layer_indices[-1]
     return None
 
-def detect_bounding_boxes(heatmap, original_image_size, threshold=0.6, min_area=100, tissue_mask=None):
+def detect_bounding_boxes(heatmap, original_image_size, threshold=0.6, min_area=100, tissue_mask=None, max_regions=8):
     """
     Detect bounding boxes around high-activation regions in the heatmap.
     Only detects within tissue areas if tissue_mask is provided.
@@ -163,32 +163,39 @@ def detect_bounding_boxes(heatmap, original_image_size, threshold=0.6, min_area=
         threshold: Activation threshold (0-1) for detecting regions
         min_area: Minimum area in pixels for a region to be considered
         tissue_mask: Optional binary mask of tissue area (same size as original image)
+        max_regions: Maximum number of regions to return (to avoid clutter)
     
     Returns:
         List of bounding boxes [(x1, y1, x2, y2, confidence), ...]
     """
+    # Make a copy to avoid modifying original
+    heatmap_work = heatmap.copy()
+    
     # If tissue mask provided, resize it to heatmap size and apply
     if tissue_mask is not None:
         # Resize tissue mask to heatmap dimensions
         tissue_mask_resized = np.array(Image.fromarray(tissue_mask.astype(np.uint8) * 255).resize(
-            (heatmap.shape[1], heatmap.shape[0]),
+            (heatmap_work.shape[1], heatmap_work.shape[0]),
             Image.NEAREST
         )) > 127
         # Zero out heatmap in background areas
-        heatmap = heatmap * tissue_mask_resized
+        heatmap_work = heatmap_work * tissue_mask_resized
     
     # Threshold the heatmap to get high-activation regions
-    binary_mask = (heatmap > threshold).astype(np.uint8)
+    binary_mask = (heatmap_work > threshold).astype(np.uint8)
     
     # Label connected components
     labeled_array, num_features = ndimage.label(binary_mask)
     
     boxes = []
-    heatmap_h, heatmap_w = heatmap.shape
+    heatmap_h, heatmap_w = heatmap_work.shape
     orig_w, orig_h = original_image_size
     
     scale_x = orig_w / heatmap_w
     scale_y = orig_h / heatmap_h
+    
+    # Minimum box size (to avoid tiny boxes)
+    min_box_size = 15  # pixels in original image space
     
     for region_id in range(1, num_features + 1):
         # Get coordinates of this region
@@ -207,17 +214,33 @@ def detect_bounding_boxes(heatmap, original_image_size, threshold=0.6, min_area=
         x2 = int(x_max * scale_x)
         y2 = int(y_max * scale_y)
         
+        # Skip boxes that are too small
+        if (x2 - x1) < min_box_size or (y2 - y1) < min_box_size:
+            continue
+        
+        # Ensure boxes are within image bounds
+        x1 = max(0, x1)
+        y1 = max(0, y1)
+        x2 = min(orig_w - 1, x2)
+        y2 = min(orig_h - 1, y2)
+        
         # Calculate confidence (average activation in this region)
         region_mask = (labeled_array == region_id)
-        confidence = float(heatmap[region_mask].mean())
+        confidence = float(heatmap_work[region_mask].mean())
         
         boxes.append((x1, y1, x2, y2, confidence))
+    
+    # Sort by confidence (highest first) and limit to max_regions
+    boxes = sorted(boxes, key=lambda b: b[4], reverse=True)[:max_regions]
+    
+    # Re-sort by position (top-left to bottom-right) for consistent labeling
+    boxes = sorted(boxes, key=lambda b: (b[1], b[0]))
     
     return boxes
 
 def draw_bounding_boxes(image, boxes, box_color='red', text_color='white', line_width=3):
     """
-    Draw bounding boxes on an image.
+    Draw bounding boxes on an image with proper label positioning.
     
     Args:
         image: PIL Image
@@ -231,31 +254,116 @@ def draw_bounding_boxes(image, boxes, box_color='red', text_color='white', line_
     """
     img_copy = image.copy()
     draw = ImageDraw.Draw(img_copy)
+    img_width, img_height = image.size
     
-    try:
-        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 16)
-    except:
+    # Try to load a font, with multiple fallbacks
+    font = None
+    font_size = 14
+    
+    # Try different font paths for different OS
+    font_paths = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",  # Linux
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",  # Linux alt
+        "C:/Windows/Fonts/arialbd.ttf",  # Windows
+        "C:/Windows/Fonts/arial.ttf",  # Windows alt
+        "/System/Library/Fonts/Helvetica.ttc",  # macOS
+    ]
+    
+    for font_path in font_paths:
+        try:
+            font = ImageFont.truetype(font_path, font_size)
+            break
+        except:
+            continue
+    
+    if font is None:
         font = ImageFont.load_default()
     
-    for i, (x1, y1, x2, y2, confidence) in enumerate(boxes):
+    # Sort boxes by y1 position to handle overlapping labels better
+    sorted_boxes = sorted(enumerate(boxes), key=lambda x: (x[1][1], x[1][0]))
+    
+    # Track used label positions to avoid overlap
+    used_label_areas = []
+    
+    for original_idx, (x1, y1, x2, y2, confidence) in sorted_boxes:
+        # Ensure box coordinates are within image bounds
+        x1 = max(0, min(x1, img_width - 1))
+        y1 = max(0, min(y1, img_height - 1))
+        x2 = max(0, min(x2, img_width - 1))
+        y2 = max(0, min(y2, img_height - 1))
+        
+        # Skip invalid boxes
+        if x2 <= x1 or y2 <= y1:
+            continue
+        
         # Draw rectangle
         draw.rectangle([x1, y1, x2, y2], outline=box_color, width=line_width)
         
-        # Draw label - position above or inside box depending on space
-        label = f"Region {i+1}: {confidence*100:.1f}%"
+        # Create label text
+        label = f"Region {original_idx + 1}: {confidence * 100:.1f}%"
         
-        # Check if there's enough space above the box (need ~25 pixels)
-        if y1 >= 25:
-            label_y = y1 - 20
-        else:
-            # Not enough space above, put it inside the box at the top
-            label_y = y1 + 5
+        # Get label dimensions
+        label_bbox = draw.textbbox((0, 0), label, font=font)
+        label_width = label_bbox[2] - label_bbox[0]
+        label_height = label_bbox[3] - label_bbox[1]
         
-        bbox = draw.textbbox((x1, label_y), label, font=font)
-        draw.rectangle([bbox[0]-2, bbox[1]-2, bbox[2]+2, bbox[3]+2], fill=box_color)
+        # Calculate initial label position (prefer above the box)
+        label_x = x1
+        label_y = y1 - label_height - 4
+        
+        # Ensure label stays within image bounds horizontally
+        if label_x + label_width > img_width:
+            label_x = img_width - label_width - 2
+        if label_x < 2:
+            label_x = 2
+        
+        # If not enough space above, try below or inside
+        if label_y < 2:
+            # Try below the box
+            if y2 + label_height + 4 < img_height:
+                label_y = y2 + 4
+            else:
+                # Put inside the box
+                label_y = y1 + 4
+        
+        # Check for overlap with existing labels and adjust
+        max_attempts = 10
+        attempt = 0
+        label_area = (label_x - 2, label_y - 2, label_x + label_width + 4, label_y + label_height + 4)
+        
+        while attempt < max_attempts:
+            overlap = False
+            for used_area in used_label_areas:
+                # Check if rectangles overlap
+                if not (label_area[2] < used_area[0] or label_area[0] > used_area[2] or
+                        label_area[3] < used_area[1] or label_area[1] > used_area[3]):
+                    overlap = True
+                    break
+            
+            if not overlap:
+                break
+            
+            # Try moving the label down
+            label_y += label_height + 6
+            if label_y + label_height > img_height - 2:
+                # Wrap to a new column position
+                label_y = 2
+                label_x += label_width + 10
+                if label_x + label_width > img_width - 2:
+                    label_x = 2  # Reset if we run out of space
+            
+            label_area = (label_x - 2, label_y - 2, label_x + label_width + 4, label_y + label_height + 4)
+            attempt += 1
+        
+        # Record this label's area
+        used_label_areas.append(label_area)
+        
+        # Draw label background
+        draw.rectangle([label_x - 2, label_y - 2, label_x + label_width + 2, label_y + label_height + 2], 
+                      fill=box_color)
         
         # Draw label text
-        draw.text((x1, label_y), label, fill=text_color, font=font)
+        draw.text((label_x, label_y), label, fill=text_color, font=font)
     
     return img_copy
 
