@@ -156,7 +156,7 @@ def draw_bounding_boxes(image, boxes, box_color='red', text_color='white', line_
     for font_path in ["/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
                       "C:/Windows/Fonts/arialbd.ttf", "C:/Windows/Fonts/arial.ttf"]:
         try:
-            font = ImageFont.truetype(font_path, 14)
+            font = ImageFont.truetype(font_path, 12)
             break
         except:
             continue
@@ -164,55 +164,89 @@ def draw_bounding_boxes(image, boxes, box_color='red', text_color='white', line_
         font = ImageFont.load_default()
     
     used_areas = []
+    drawn_count = 0
     
     for i, (x1, y1, x2, y2, confidence) in enumerate(boxes):
-        # Clamp to image bounds
-        x1 = max(0, min(x1, img_width - 1))
-        y1 = max(0, min(y1, img_height - 1))
-        x2 = max(0, min(x2, img_width - 1))
-        y2 = max(0, min(y2, img_height - 1))
+        # Strict bounds check
+        x1 = max(5, min(x1, img_width - 5))
+        y1 = max(5, min(y1, img_height - 5))
+        x2 = max(5, min(x2, img_width - 5))
+        y2 = max(5, min(y2, img_height - 5))
         
-        if x2 <= x1 or y2 <= y1:
+        if x2 <= x1 + 10 or y2 <= y1 + 10:
             continue
         
+        # Draw the bounding box
         draw.rectangle([x1, y1, x2, y2], outline=box_color, width=line_width)
+        drawn_count += 1
         
-        label = f"Region {i + 1}: {confidence * 100:.1f}%"
+        label = f"Region {drawn_count}: {confidence * 100:.1f}%"
         bbox = draw.textbbox((0, 0), label, font=font)
         lw = bbox[2] - bbox[0]
         lh = bbox[3] - bbox[1]
         
-        # Position label - prefer above box
-        lx = x1
-        ly = y1 - lh - 4
+        # Calculate label position - MUST stay inside image
+        # Try positions in order: above box, below box, inside box top, inside box bottom
+        positions = [
+            (x1, y1 - lh - 6),  # Above
+            (x1, y2 + 4),       # Below
+            (x1 + 4, y1 + 4),   # Inside top
+            (x1 + 4, y2 - lh - 4),  # Inside bottom
+        ]
         
-        # Keep label inside image
-        if lx + lw > img_width:
-            lx = img_width - lw - 2
-        if lx < 2:
-            lx = 2
-        if ly < 2:
-            ly = y2 + 4 if y2 + lh + 4 < img_height else y1 + 4
-        
-        # Avoid overlap with previous labels
-        for _ in range(10):
-            overlap = False
-            label_area = (lx - 2, ly - 2, lx + lw + 4, ly + lh + 4)
+        best_pos = None
+        for px, py in positions:
+            # Clamp to image bounds
+            px = max(4, min(px, img_width - lw - 4))
+            py = max(4, min(py, img_height - lh - 4))
+            
+            # Check if position is valid (inside image)
+            if px < 4 or py < 4 or px + lw > img_width - 4 or py + lh > img_height - 4:
+                continue
+            
+            # Check for overlap with existing labels
+            label_rect = (px - 2, py - 2, px + lw + 2, py + lh + 2)
+            has_overlap = False
             for used in used_areas:
-                if not (label_area[2] < used[0] or label_area[0] > used[2] or
-                        label_area[3] < used[1] or label_area[1] > used[3]):
-                    overlap = True
+                if not (label_rect[2] < used[0] or label_rect[0] > used[2] or
+                        label_rect[3] < used[1] or label_rect[1] > used[3]):
+                    has_overlap = True
                     break
-            if not overlap:
+            
+            if not has_overlap:
+                best_pos = (px, py)
                 break
-            ly += lh + 6
-            if ly + lh > img_height - 2:
-                ly = 2
-                lx += lw + 10
-                if lx + lw > img_width - 2:
-                    lx = 2
         
-        used_areas.append((lx - 2, ly - 2, lx + lw + 4, ly + lh + 4))
+        # If no good position found, try shifting down incrementally
+        if best_pos is None:
+            px, py = x1, y1 - lh - 6
+            px = max(4, min(px, img_width - lw - 4))
+            for shift in range(0, img_height, lh + 8):
+                test_y = (y1 + shift) % (img_height - lh - 8) + 4
+                label_rect = (px - 2, test_y - 2, px + lw + 2, test_y + lh + 2)
+                has_overlap = False
+                for used in used_areas:
+                    if not (label_rect[2] < used[0] or label_rect[0] > used[2] or
+                            label_rect[3] < used[1] or label_rect[1] > used[3]):
+                        has_overlap = True
+                        break
+                if not has_overlap:
+                    best_pos = (px, test_y)
+                    break
+        
+        if best_pos is None:
+            best_pos = (max(4, min(x1, img_width - lw - 4)), max(4, min(y1, img_height - lh - 4)))
+        
+        lx, ly = best_pos
+        
+        # Final bounds check
+        lx = max(4, min(lx, img_width - lw - 4))
+        ly = max(4, min(ly, img_height - lh - 4))
+        
+        # Record this label area
+        used_areas.append((lx - 2, ly - 2, lx + lw + 2, ly + lh + 2))
+        
+        # Draw label background and text
         draw.rectangle([lx - 2, ly - 2, lx + lw + 2, ly + lh + 2], fill=box_color)
         draw.text((lx, ly), label, fill=text_color, font=font)
     
@@ -326,31 +360,41 @@ def create_gradcam_visualization(original_image, preprocessed_img, model, confid
         heatmap_only_image = Image.fromarray(buf[:, :, :3])
         plt.close(fig)
         
-        # Detect boxes with lower threshold for better detection
+        # Detect boxes with tissue mask filtering
         boxes = detect_bounding_boxes(heatmap, original_image.size, threshold=0.5, min_area=50, 
                                       tissue_mask=tissue_mask, max_regions=8)
         
-        # Filter: remove boxes that are mostly on black background (keep if >40% on tissue)
+        # STRICT filter: remove boxes on black background - box center must be on tissue
+        # Also check that box is mostly on tissue (>50%)
         filtered_boxes = []
+        img_h, img_w = img_array.shape[:2]
+        
         for (x1, y1, x2, y2, conf) in boxes:
-            x1s = max(0, min(x1, img_array.shape[1]-1))
-            y1s = max(0, min(y1, img_array.shape[0]-1))
-            x2s = max(0, min(x2, img_array.shape[1]-1))
-            y2s = max(0, min(y2, img_array.shape[0]-1))
-            if y2s > y1s and x2s > x1s:
-                box_mask = tissue_mask[y1s:y2s, x1s:x2s]
-                if box_mask.size > 0:
-                    tissue_pct = np.sum(box_mask) / box_mask.size
-                    # Keep boxes that are at least 40% on tissue
-                    if tissue_pct >= 0.4:
-                        filtered_boxes.append((x1, y1, x2, y2, conf))
+            # Get safe coordinates
+            x1s = max(0, min(int(x1), img_w-1))
+            y1s = max(0, min(int(y1), img_h-1))
+            x2s = max(0, min(int(x2), img_w-1))
+            y2s = max(0, min(int(y2), img_h-1))
+            
+            if y2s <= y1s or x2s <= x1s:
+                continue
+            
+            # Check box center - must be on tissue
+            cx, cy = (x1s + x2s) // 2, (y1s + y2s) // 2
+            if not tissue_mask[cy, cx]:
+                continue
+            
+            # Check tissue percentage in box - must be >50%
+            box_mask = tissue_mask[y1s:y2s, x1s:x2s]
+            if box_mask.size == 0:
+                continue
+            tissue_pct = np.sum(box_mask) / box_mask.size
+            if tissue_pct < 0.5:
+                continue
+            
+            filtered_boxes.append((x1, y1, x2, y2, conf))
         
         boxes = filtered_boxes
-        
-        # If still no boxes, try without tissue filter but with original heatmap
-        if len(boxes) == 0:
-            boxes = detect_bounding_boxes(heatmap, original_image.size, threshold=0.5, min_area=50, 
-                                          tissue_mask=None, max_regions=8)
         
         if boxes:
             bbox_image = draw_bounding_boxes(original_image, boxes, box_color='#FF0000', line_width=4)
