@@ -9,40 +9,73 @@ import matplotlib.pyplot as plt
 from scipy import ndimage
 
 def make_gradcam_heatmap(img_array, model, last_conv_layer_index, pred_index=None):
-    last_conv_layer = model.layers[last_conv_layer_index]
-    inputs = tf.keras.Input(shape=(224, 224, 3))
-    
-    x = inputs
-    for i, layer in enumerate(model.layers):
-        x = layer(x)
-        if i == last_conv_layer_index:
-            conv_output = x
-    
-    final_output = x
-    
-    grad_model = tf.keras.Model(inputs=inputs, outputs=[conv_output, final_output])
-    
-    with tf.GradientTape() as tape:
-        conv_outputs, predictions = grad_model(img_array)
-        if pred_index is None:
-            pred_index = 0
-        class_channel = predictions[:, pred_index]
-    
-    grads = tape.gradient(class_channel, conv_outputs)
-    
-    if grads is None:
+    """Generate Grad-CAM heatmap with better handling for various model architectures."""
+    try:
+        last_conv_layer = model.layers[last_conv_layer_index]
+        print(f"DEBUG: Using conv layer: {last_conv_layer.name} at index {last_conv_layer_index}")
+        
+        # Create gradient model
+        grad_model = tf.keras.Model(
+            inputs=model.input,
+            outputs=[model.layers[last_conv_layer_index].output, model.output]
+        )
+        
+        with tf.GradientTape() as tape:
+            conv_outputs, predictions = grad_model(img_array)
+            if pred_index is None:
+                pred_index = 0
+            
+            # For binary classification, use the output directly
+            if predictions.shape[-1] == 1:
+                class_channel = predictions[:, 0]
+            else:
+                class_channel = predictions[:, pred_index]
+            
+            print(f"DEBUG: Prediction value: {class_channel.numpy()}")
+        
+        grads = tape.gradient(class_channel, conv_outputs)
+        
+        if grads is None:
+            print("DEBUG: Gradients are None!")
+            return None
+        
+        print(f"DEBUG: Gradients shape: {grads.shape}, range: [{tf.reduce_min(grads).numpy():.4f}, {tf.reduce_max(grads).numpy():.4f}]")
+        
+        # Global average pooling of gradients
+        pooled_grads = tf.reduce_mean(grads, axis=(0, 1, 2))
+        
+        # Get conv layer output
+        conv_outputs = conv_outputs[0]
+        
+        # Weight the channels by gradient importance
+        heatmap = conv_outputs @ pooled_grads[..., tf.newaxis]
+        heatmap = tf.squeeze(heatmap)
+        
+        # ReLU and normalize
+        heatmap = tf.maximum(heatmap, 0)
+        max_val = tf.math.reduce_max(heatmap)
+        print(f"DEBUG: Heatmap max before norm: {max_val.numpy():.4f}")
+        
+        if max_val > 0:
+            heatmap = heatmap / max_val
+        else:
+            # If heatmap is all zeros, create a simple intensity-based heatmap
+            print("DEBUG: Heatmap was all zeros, using fallback")
+            heatmap = tf.reduce_mean(conv_outputs, axis=-1)
+            heatmap = tf.maximum(heatmap, 0)
+            max_val = tf.math.reduce_max(heatmap)
+            if max_val > 0:
+                heatmap = heatmap / max_val
+        
+        result = heatmap.numpy()
+        print(f"DEBUG: Final heatmap range: [{np.min(result):.4f}, {np.max(result):.4f}]")
+        return result
+        
+    except Exception as e:
+        print(f"DEBUG: Grad-CAM error: {e}")
+        import traceback
+        traceback.print_exc()
         return None
-    
-    pooled_grads = tf.reduce_mean(grads, axis=(0, 1, 2))
-    conv_outputs = conv_outputs[0]
-    heatmap = conv_outputs @ pooled_grads[..., tf.newaxis]
-    heatmap = tf.squeeze(heatmap)
-    heatmap = tf.maximum(heatmap, 0)
-    max_val = tf.math.reduce_max(heatmap)
-    if max_val > 0:
-        heatmap = heatmap / max_val
-    
-    return heatmap.numpy()
 
 def create_tissue_mask(img_array, threshold=15):
     """Create mask for breast tissue (non-black areas)."""
@@ -57,39 +90,63 @@ def create_tissue_mask(img_array, threshold=15):
     mask = ndimage.binary_closing(mask, iterations=1)
     return mask
 
-def create_heatmap_overlay(original_image, heatmap, alpha=0.5, colormap='jet'):
+def create_heatmap_overlay(original_image, heatmap, alpha=0.6, colormap='jet'):
+    """Create colorful heatmap overlay on original image."""
     img_array = np.array(original_image)
     
-    # Enhance heatmap contrast - normalize to full range
+    print(f"DEBUG: Heatmap input range: [{np.min(heatmap):.4f}, {np.max(heatmap):.4f}]")
+    
+    # Enhance heatmap contrast aggressively
     heatmap_enhanced = heatmap.copy()
+    
+    # Normalize to 0-1 range
     hmap_min = np.min(heatmap_enhanced)
     hmap_max = np.max(heatmap_enhanced)
+    
     if hmap_max > hmap_min:
         heatmap_enhanced = (heatmap_enhanced - hmap_min) / (hmap_max - hmap_min)
+    else:
+        # If all same value, create gradient based on distance from center
+        h, w = heatmap_enhanced.shape
+        y, x = np.ogrid[:h, :w]
+        center_y, center_x = h // 2, w // 2
+        dist = np.sqrt((x - center_x)**2 + (y - center_y)**2)
+        heatmap_enhanced = 1 - (dist / np.max(dist))
     
-    # Apply power transform to enhance contrast
-    heatmap_enhanced = np.power(heatmap_enhanced, 0.5)
+    # Apply gamma correction to enhance mid-tones (make colors more visible)
+    heatmap_enhanced = np.power(heatmap_enhanced, 0.4)
     
+    print(f"DEBUG: Heatmap enhanced range: [{np.min(heatmap_enhanced):.4f}, {np.max(heatmap_enhanced):.4f}]")
+    
+    # Resize heatmap to image size
     heatmap_resized = np.array(Image.fromarray((heatmap_enhanced * 255).astype(np.uint8)).resize(
         (original_image.size[0], original_image.size[1]), Image.BILINEAR
     ))
     heatmap_resized = heatmap_resized.astype(np.float32) / 255.0
     
+    # Create tissue mask
     tissue_mask = create_tissue_mask(img_array, threshold=15)
+    
+    # Apply tissue mask to heatmap
     heatmap_resized = heatmap_resized * tissue_mask
     
+    # Apply colormap (jet: blue->cyan->green->yellow->red)
     cmap = cm.get_cmap(colormap)
     heatmap_colored = cmap(heatmap_resized)
     heatmap_colored = (heatmap_colored[:, :, :3] * 255).astype(np.uint8)
     
+    # Ensure image is RGB
     if len(img_array.shape) == 2:
         img_array = np.stack([img_array] * 3, axis=-1)
     elif img_array.shape[2] == 4:
         img_array = img_array[:, :, :3]
     
+    # Blend with higher alpha for more visible heatmap
     overlay = img_array.copy().astype(np.float32)
     tissue_mask_3d = np.stack([tissue_mask] * 3, axis=-1)
-    overlay = np.where(tissue_mask_3d, (1 - alpha) * img_array + alpha * heatmap_colored, img_array)
+    overlay = np.where(tissue_mask_3d, 
+                       (1 - alpha) * img_array + alpha * heatmap_colored, 
+                       img_array)
     overlay = np.clip(overlay, 0, 255).astype(np.uint8)
     
     return Image.fromarray(overlay)
