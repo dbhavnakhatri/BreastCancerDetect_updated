@@ -26,7 +26,7 @@ const getDefaultApiBase = () => {
 
   // Fallback for production (Render backend)
   // IMPORTANT: Update this URL to your deployed backend URL
-  const productionUrl = "https://breast-cancer-backend-3aei.onrender.com";
+  const productionUrl = "https://breast-cancer-73t1.onrender.com";
   console.log("Using production API URL:", productionUrl);
   return productionUrl;
 };

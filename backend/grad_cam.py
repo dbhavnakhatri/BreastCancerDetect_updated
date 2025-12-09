@@ -3,95 +3,96 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 import matplotlib
 
-matplotlib.use("Agg")
+matplotlib.use("Agg")  # Ensure headless rendering for serverless environments
 import matplotlib.cm as cm
 import matplotlib.pyplot as plt
 from scipy import ndimage
 
 def make_gradcam_heatmap(img_array, model, last_conv_layer_index, pred_index=None):
-    """Generate Grad-CAM heatmap with better handling for various model architectures."""
-    try:
-        last_conv_layer = model.layers[last_conv_layer_index]
-        print(f"DEBUG: Using conv layer: {last_conv_layer.name} at index {last_conv_layer_index}")
-        
-        # Create gradient model
-        grad_model = tf.keras.Model(
-            inputs=model.input,
-            outputs=[model.layers[last_conv_layer_index].output, model.output]
-        )
-        
-        with tf.GradientTape() as tape:
-            conv_outputs, predictions = grad_model(img_array)
-            if pred_index is None:
-                pred_index = 0
-            
-            # For binary classification, use the output directly
-            if predictions.shape[-1] == 1:
-                class_channel = predictions[:, 0]
-            else:
-                class_channel = predictions[:, pred_index]
-            
-            print(f"DEBUG: Prediction value: {class_channel.numpy()}")
-        
-        grads = tape.gradient(class_channel, conv_outputs)
-        
-        if grads is None:
-            print("DEBUG: Gradients are None!")
-            return None
-        
-        print(f"DEBUG: Gradients shape: {grads.shape}, range: [{tf.reduce_min(grads).numpy():.4f}, {tf.reduce_max(grads).numpy():.4f}]")
-        
-        # Global average pooling of gradients
-        pooled_grads = tf.reduce_mean(grads, axis=(0, 1, 2))
-        
-        # Get conv layer output
-        conv_outputs = conv_outputs[0]
-        
-        # Weight the channels by gradient importance
-        heatmap = conv_outputs @ pooled_grads[..., tf.newaxis]
-        heatmap = tf.squeeze(heatmap)
-        
-        # ReLU and normalize
-        heatmap = tf.maximum(heatmap, 0)
-        max_val = tf.math.reduce_max(heatmap)
-        print(f"DEBUG: Heatmap max before norm: {max_val.numpy():.4f}")
-        
-        if max_val > 0:
-            heatmap = heatmap / max_val
-        else:
-            # If heatmap is all zeros, create a simple intensity-based heatmap
-            print("DEBUG: Heatmap was all zeros, using fallback")
-            heatmap = tf.reduce_mean(conv_outputs, axis=-1)
-            heatmap = tf.maximum(heatmap, 0)
-            max_val = tf.math.reduce_max(heatmap)
-            if max_val > 0:
-                heatmap = heatmap / max_val
-        
-        result = heatmap.numpy()
-        print(f"DEBUG: Final heatmap range: [{np.min(result):.4f}, {np.max(result):.4f}]")
-        return result
-        
-    except Exception as e:
-        print(f"DEBUG: Grad-CAM error: {e}")
-        import traceback
-        traceback.print_exc()
+    """
+    Generate Grad-CAM heatmap for a given image and model.
+    
+    Args:
+        img_array: Preprocessed input image (batch_size, height, width, channels)
+        model: The trained model  
+        last_conv_layer_index: Index of the last convolutional layer
+        pred_index: Index of the class to visualize (None for top prediction)
+    
+    Returns:
+        Normalized heatmap as numpy array
+    """
+    # Get the last convolutional layer
+    last_conv_layer = model.layers[last_conv_layer_index]
+    
+    # For loaded Sequential models, we need to create inputs manually
+    # Create a new input tensor
+    inputs = tf.keras.Input(shape=(224, 224, 3))
+    
+    # Pass through all layers up to and including the last conv layer
+    x = inputs
+    for i, layer in enumerate(model.layers):
+        x = layer(x)
+        if i == last_conv_layer_index:
+            conv_output = x
+    
+    # Get the final output
+    final_output = x
+    
+    # Create a model that maps inputs to activations of the last conv layer and the output predictions
+    grad_model = tf.keras.Model(
+        inputs=inputs,
+        outputs=[conv_output, final_output]
+    )
+    
+    with tf.GradientTape() as tape:
+        conv_outputs, predictions = grad_model(img_array)
+        if pred_index is None:
+            pred_index = 0
+        class_channel = predictions[:, pred_index]
+    
+    grads = tape.gradient(class_channel, conv_outputs)
+    
+    if grads is None:
         return None
+    
+    pooled_grads = tf.reduce_mean(grads, axis=(0, 1, 2))
+    
+    conv_outputs = conv_outputs[0]
+    heatmap = conv_outputs @ pooled_grads[..., tf.newaxis]
+    heatmap = tf.squeeze(heatmap)
+    
+    heatmap = tf.maximum(heatmap, 0)
+    max_val = tf.math.reduce_max(heatmap)
+    if max_val > 0:
+        heatmap = heatmap / max_val
+    
+    return heatmap.numpy()
 
 def create_tissue_mask(img_array, threshold=15):
-    """Create mask for breast tissue (non-black areas)."""
+    """
+    Create a mask identifying tissue (non-background) areas.
+    
+    Args:
+        img_array: Image as numpy array
+        threshold: Pixel intensity threshold to distinguish tissue from background
+    
+    Returns:
+        Binary mask where True = tissue area
+    """
     if len(img_array.shape) == 3:
         gray = np.mean(img_array, axis=2)
     else:
-        gray = img_array.copy()
+        gray = img_array
     
+    # Tissue is where pixel intensity is above threshold (not black background)
     mask = gray > threshold
-    # Clean up mask - less aggressive
-    mask = ndimage.binary_fill_holes(mask)
-    mask = ndimage.binary_closing(mask, iterations=1)
     return mask
+
 
 def create_intensity_based_heatmap(img_array):
     """Create heatmap based on image intensity - highlights bright regions (potential lesions)."""
+    from scipy.ndimage import gaussian_filter
+    
     if len(img_array.shape) == 3:
         gray = np.mean(img_array, axis=2)
     else:
@@ -99,290 +100,303 @@ def create_intensity_based_heatmap(img_array):
     
     # Normalize
     gray = gray.astype(np.float32)
-    gray = (gray - np.min(gray)) / (np.max(gray) - np.min(gray) + 1e-8)
+    g_min, g_max = np.min(gray), np.max(gray)
+    if g_max > g_min:
+        gray = (gray - g_min) / (g_max - g_min)
     
     # Apply Gaussian blur to smooth
-    from scipy.ndimage import gaussian_filter
     gray = gaussian_filter(gray, sigma=3)
     
     # Enhance contrast - focus on bright regions
     gray = np.power(gray, 0.7)
     
     # Normalize again
-    gray = (gray - np.min(gray)) / (np.max(gray) - np.min(gray) + 1e-8)
+    g_min, g_max = np.min(gray), np.max(gray)
+    if g_max > g_min:
+        gray = (gray - g_min) / (g_max - g_min)
     
     return gray
 
-def create_heatmap_overlay(original_image, heatmap, alpha=0.6, colormap='jet'):
-    """Create colorful heatmap overlay on original image."""
+
+def create_heatmap_overlay(original_image, heatmap, alpha=0.5, colormap='jet'):
+    """
+    Create an overlay of the heatmap on the original image.
+    Only shows heatmap on tissue areas, not on black background.
+    Uses intensity-based fallback if Grad-CAM fails.
+    
+    Args:
+        original_image: PIL Image object
+        heatmap: Normalized heatmap array
+        alpha: Transparency of the heatmap overlay (0-1)
+        colormap: Matplotlib colormap name
+    
+    Returns:
+        PIL Image with heatmap overlay
+    """
     img_array = np.array(original_image)
     
-    print(f"DEBUG: Heatmap input range: [{np.min(heatmap):.4f}, {np.max(heatmap):.4f}]")
-    
-    # Check if heatmap has meaningful variation
+    # Check if Grad-CAM heatmap has meaningful variation
     hmap_range = np.max(heatmap) - np.min(heatmap)
+    print(f"DEBUG: Heatmap range = {hmap_range:.4f}")
     
     if hmap_range < 0.01:
         # Grad-CAM failed - use intensity-based heatmap as fallback
         print("DEBUG: Grad-CAM heatmap has no variation, using intensity-based fallback")
-        # Resize image to heatmap size for intensity calculation
         img_small = np.array(original_image.resize((heatmap.shape[1], heatmap.shape[0])))
         heatmap = create_intensity_based_heatmap(img_small)
     
-    # Enhance heatmap contrast aggressively
-    heatmap_enhanced = heatmap.copy()
-    
-    # Normalize to 0-1 range
-    hmap_min = np.min(heatmap_enhanced)
-    hmap_max = np.max(heatmap_enhanced)
-    
+    # Enhance contrast
+    hmap_min, hmap_max = np.min(heatmap), np.max(heatmap)
     if hmap_max > hmap_min:
-        heatmap_enhanced = (heatmap_enhanced - hmap_min) / (hmap_max - hmap_min)
+        heatmap = (heatmap - hmap_min) / (hmap_max - hmap_min)
     
-    # Apply gamma correction to enhance mid-tones
-    heatmap_enhanced = np.power(heatmap_enhanced, 0.5)
+    # Apply gamma for better visibility
+    heatmap = np.power(heatmap, 0.5)
     
-    print(f"DEBUG: Heatmap enhanced range: [{np.min(heatmap_enhanced):.4f}, {np.max(heatmap_enhanced):.4f}]")
-    
-    # Resize heatmap to image size
-    heatmap_resized = np.array(Image.fromarray((heatmap_enhanced * 255).astype(np.uint8)).resize(
-        (original_image.size[0], original_image.size[1]), Image.BILINEAR
+    heatmap_resized = np.array(Image.fromarray((heatmap * 255).astype(np.uint8)).resize(
+        (original_image.size[0], original_image.size[1]),
+        Image.BILINEAR
     ))
+    
     heatmap_resized = heatmap_resized.astype(np.float32) / 255.0
     
-    # Create tissue mask
+    # Create tissue mask to avoid showing heatmap on black background
     tissue_mask = create_tissue_mask(img_array, threshold=15)
     
-    # Apply tissue mask to heatmap
+    # Zero out heatmap in background areas
     heatmap_resized = heatmap_resized * tissue_mask
     
-    # Apply colormap (jet: blue->cyan->green->yellow->red)
     cmap = cm.get_cmap(colormap)
     heatmap_colored = cmap(heatmap_resized)
     heatmap_colored = (heatmap_colored[:, :, :3] * 255).astype(np.uint8)
     
-    # Ensure image is RGB
     if len(img_array.shape) == 2:
         img_array = np.stack([img_array] * 3, axis=-1)
     elif img_array.shape[2] == 4:
         img_array = img_array[:, :, :3]
     
-    # Blend with higher alpha for more visible heatmap
+    # Only apply overlay where there is tissue
     overlay = img_array.copy().astype(np.float32)
     tissue_mask_3d = np.stack([tissue_mask] * 3, axis=-1)
     overlay = np.where(tissue_mask_3d, 
-                       (1 - alpha) * img_array + alpha * heatmap_colored, 
+                       (1 - alpha) * img_array + alpha * heatmap_colored,
                        img_array)
     overlay = np.clip(overlay, 0, 255).astype(np.uint8)
     
     return Image.fromarray(overlay)
 
 def get_last_conv_layer_index(model):
+    """
+    Find the index of the last convolutional layer in the model.
+    
+    Args:
+        model: Keras model
+    
+    Returns:
+        Index of the last Conv2D layer
+    """
     conv_layer_indices = [i for i, layer in enumerate(model.layers) if isinstance(layer, tf.keras.layers.Conv2D)]
     if conv_layer_indices:
         return conv_layer_indices[-1]
     return None
 
-def detect_bounding_boxes(heatmap, original_image_size, threshold=0.5, min_area=50, tissue_mask=None, max_regions=8):
-    """Detect bounding boxes - ONLY on tissue areas, max 8 regions."""
-    heatmap_work = heatmap.copy()
+def detect_bounding_boxes(heatmap, original_image_size, threshold=0.6, min_area=100, tissue_mask=None):
+    """
+    Detect bounding boxes around high-activation regions in the heatmap.
+    Only detects within tissue areas if tissue_mask is provided.
     
-    # Apply tissue mask to filter black background (if provided)
+    Args:
+        heatmap: Normalized heatmap array (values 0-1)
+        original_image_size: Tuple of (width, height) of original image
+        threshold: Activation threshold (0-1) for detecting regions
+        min_area: Minimum area in pixels for a region to be considered
+        tissue_mask: Optional binary mask of tissue area (same size as original image)
+    
+    Returns:
+        List of bounding boxes [(x1, y1, x2, y2, confidence), ...]
+    """
+    # If tissue mask provided, resize it to heatmap size and apply
     if tissue_mask is not None:
+        # Resize tissue mask to heatmap dimensions
         tissue_mask_resized = np.array(Image.fromarray(tissue_mask.astype(np.uint8) * 255).resize(
-            (heatmap_work.shape[1], heatmap_work.shape[0]), Image.NEAREST
+            (heatmap.shape[1], heatmap.shape[0]),
+            Image.NEAREST
         )) > 127
-        heatmap_work = heatmap_work * tissue_mask_resized
+        # Zero out heatmap in background areas
+        heatmap = heatmap * tissue_mask_resized
     
-    binary_mask = (heatmap_work > threshold).astype(np.uint8)
+    # Threshold the heatmap to get high-activation regions
+    binary_mask = (heatmap > threshold).astype(np.uint8)
+    
+    # Label connected components
     labeled_array, num_features = ndimage.label(binary_mask)
     
     boxes = []
-    heatmap_h, heatmap_w = heatmap_work.shape
+    heatmap_h, heatmap_w = heatmap.shape
     orig_w, orig_h = original_image_size
+    
     scale_x = orig_w / heatmap_w
     scale_y = orig_h / heatmap_h
-    min_box_size = 15  # Minimum box size in pixels
     
     for region_id in range(1, num_features + 1):
+        # Get coordinates of this region
         region_coords = np.where(labeled_array == region_id)
         
         if len(region_coords[0]) < min_area / (scale_x * scale_y):
             continue
         
+        # Get bounding box coordinates in heatmap space
         y_min, y_max = region_coords[0].min(), region_coords[0].max()
         x_min, x_max = region_coords[1].min(), region_coords[1].max()
         
+        # Scale to original image size
         x1 = int(x_min * scale_x)
         y1 = int(y_min * scale_y)
         x2 = int(x_max * scale_x)
         y2 = int(y_max * scale_y)
         
-        # Skip tiny boxes
-        if (x2 - x1) < min_box_size or (y2 - y1) < min_box_size:
-            continue
-        
-        # Keep within bounds
-        x1 = max(0, x1)
-        y1 = max(0, y1)
-        x2 = min(orig_w - 1, x2)
-        y2 = min(orig_h - 1, y2)
-        
+        # Calculate confidence (average activation in this region)
         region_mask = (labeled_array == region_id)
-        confidence = float(heatmap_work[region_mask].mean())
+        confidence = float(heatmap[region_mask].mean())
+        
         boxes.append((x1, y1, x2, y2, confidence))
-    
-    # Sort by confidence and limit to max_regions
-    boxes = sorted(boxes, key=lambda b: b[4], reverse=True)[:max_regions]
-    boxes = sorted(boxes, key=lambda b: (b[1], b[0]))
     
     return boxes
 
 def draw_bounding_boxes(image, boxes, box_color='red', text_color='white', line_width=3):
-    """Draw boxes with labels that stay INSIDE image and don't overlap."""
+    """
+    Draw bounding boxes on an image.
+    
+    Args:
+        image: PIL Image
+        boxes: List of bounding boxes [(x1, y1, x2, y2, confidence), ...]
+        box_color: Color for the bounding box
+        text_color: Color for the confidence text
+        line_width: Width of the bounding box lines
+    
+    Returns:
+        PIL Image with bounding boxes drawn
+    """
     img_copy = image.copy()
     draw = ImageDraw.Draw(img_copy)
-    img_width, img_height = image.size
     
-    # Try multiple font paths
-    font = None
-    for font_path in ["/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-                      "C:/Windows/Fonts/arialbd.ttf", "C:/Windows/Fonts/arial.ttf"]:
-        try:
-            font = ImageFont.truetype(font_path, 12)
-            break
-        except:
-            continue
-    if font is None:
+    try:
+        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 16)
+    except:
         font = ImageFont.load_default()
     
-    used_areas = []
-    drawn_count = 0
-    
     for i, (x1, y1, x2, y2, confidence) in enumerate(boxes):
-        # Strict bounds check
-        x1 = max(5, min(x1, img_width - 5))
-        y1 = max(5, min(y1, img_height - 5))
-        x2 = max(5, min(x2, img_width - 5))
-        y2 = max(5, min(y2, img_height - 5))
-        
-        if x2 <= x1 + 10 or y2 <= y1 + 10:
-            continue
-        
-        # Draw the bounding box
+        # Draw rectangle
         draw.rectangle([x1, y1, x2, y2], outline=box_color, width=line_width)
-        drawn_count += 1
         
-        label = f"Region {drawn_count}: {confidence * 100:.1f}%"
-        bbox = draw.textbbox((0, 0), label, font=font)
-        lw = bbox[2] - bbox[0]
-        lh = bbox[3] - bbox[1]
+        # Draw label - position above or inside box depending on space
+        label = f"Region {i+1}: {confidence*100:.1f}%"
         
-        # Calculate label position - MUST stay inside image
-        # Try positions in order: above box, below box, inside box top, inside box bottom
-        positions = [
-            (x1, y1 - lh - 6),  # Above
-            (x1, y2 + 4),       # Below
-            (x1 + 4, y1 + 4),   # Inside top
-            (x1 + 4, y2 - lh - 4),  # Inside bottom
-        ]
+        # Check if there's enough space above the box (need ~25 pixels)
+        if y1 >= 25:
+            label_y = y1 - 20
+        else:
+            # Not enough space above, put it inside the box at the top
+            label_y = y1 + 5
         
-        best_pos = None
-        for px, py in positions:
-            # Clamp to image bounds
-            px = max(4, min(px, img_width - lw - 4))
-            py = max(4, min(py, img_height - lh - 4))
-            
-            # Check if position is valid (inside image)
-            if px < 4 or py < 4 or px + lw > img_width - 4 or py + lh > img_height - 4:
-                continue
-            
-            # Check for overlap with existing labels
-            label_rect = (px - 2, py - 2, px + lw + 2, py + lh + 2)
-            has_overlap = False
-            for used in used_areas:
-                if not (label_rect[2] < used[0] or label_rect[0] > used[2] or
-                        label_rect[3] < used[1] or label_rect[1] > used[3]):
-                    has_overlap = True
-                    break
-            
-            if not has_overlap:
-                best_pos = (px, py)
-                break
+        bbox = draw.textbbox((x1, label_y), label, font=font)
+        draw.rectangle([bbox[0]-2, bbox[1]-2, bbox[2]+2, bbox[3]+2], fill=box_color)
         
-        # If no good position found, try shifting down incrementally
-        if best_pos is None:
-            px, py = x1, y1 - lh - 6
-            px = max(4, min(px, img_width - lw - 4))
-            for shift in range(0, img_height, lh + 8):
-                test_y = (y1 + shift) % (img_height - lh - 8) + 4
-                label_rect = (px - 2, test_y - 2, px + lw + 2, test_y + lh + 2)
-                has_overlap = False
-                for used in used_areas:
-                    if not (label_rect[2] < used[0] or label_rect[0] > used[2] or
-                            label_rect[3] < used[1] or label_rect[1] > used[3]):
-                        has_overlap = True
-                        break
-                if not has_overlap:
-                    best_pos = (px, test_y)
-                    break
-        
-        if best_pos is None:
-            best_pos = (max(4, min(x1, img_width - lw - 4)), max(4, min(y1, img_height - lh - 4)))
-        
-        lx, ly = best_pos
-        
-        # Final bounds check
-        lx = max(4, min(lx, img_width - lw - 4))
-        ly = max(4, min(ly, img_height - lh - 4))
-        
-        # Record this label area
-        used_areas.append((lx - 2, ly - 2, lx + lw + 2, ly + lh + 2))
-        
-        # Draw label background and text
-        draw.rectangle([lx - 2, ly - 2, lx + lw + 2, ly + lh + 2], fill=box_color)
-        draw.text((lx, ly), label, fill=text_color, font=font)
+        # Draw label text
+        draw.text((x1, label_y), label, fill=text_color, font=font)
     
     return img_copy
 
 def get_region_location(x1, y1, x2, y2, img_width, img_height):
+    """
+    Determine the anatomical location of a detected region.
+    """
     center_x = (x1 + x2) / 2
     center_y = (y1 + y2) / 2
     
-    h_pos = "lateral" if center_x < img_width * 0.33 else ("medial" if center_x > img_width * 0.67 else "central")
-    v_pos = "upper" if center_y < img_height * 0.33 else ("lower" if center_y > img_height * 0.67 else "mid")
+    # Determine horizontal position
+    if center_x < img_width * 0.33:
+        h_pos = "lateral"
+    elif center_x > img_width * 0.67:
+        h_pos = "medial"
+    else:
+        h_pos = "central"
     
+    # Determine vertical position
+    if center_y < img_height * 0.33:
+        v_pos = "upper"
+    elif center_y > img_height * 0.67:
+        v_pos = "lower"
+    else:
+        v_pos = "mid"
+    
+    # Quadrant determination
     if center_x < img_width * 0.5 and center_y < img_height * 0.5:
         quadrant = "upper-outer quadrant"
     elif center_x >= img_width * 0.5 and center_y < img_height * 0.5:
         quadrant = "upper-inner quadrant"
-    elif center_x < img_width * 0.5:
+    elif center_x < img_width * 0.5 and center_y >= img_height * 0.5:
         quadrant = "lower-outer quadrant"
     else:
         quadrant = "lower-inner quadrant"
     
-    return {"position": f"{v_pos}-{h_pos}", "quadrant": quadrant, "description": f"{v_pos} {h_pos} region ({quadrant})"}
+    return {
+        "position": f"{v_pos}-{h_pos}",
+        "quadrant": quadrant,
+        "description": f"{v_pos} {h_pos} region ({quadrant})"
+    }
+
 
 def analyze_region_characteristics(heatmap, x1, y1, x2, y2, scale_x, scale_y):
+    """
+    Analyze characteristics of a detected region.
+    """
+    # Convert to heatmap coordinates
     hx1, hy1 = int(x1 / scale_x), int(y1 / scale_y)
     hx2, hy2 = int(x2 / scale_x), int(y2 / scale_y)
+    
+    # Ensure bounds
     hx1, hx2 = max(0, hx1), min(heatmap.shape[1], hx2)
     hy1, hy2 = max(0, hy1), min(heatmap.shape[0], hy2)
     
     region = heatmap[hy1:hy2, hx1:hx2]
+    
     if region.size == 0:
         return {}
     
+    # Calculate characteristics
     mean_intensity = float(np.mean(region))
     max_intensity = float(np.max(region))
     std_intensity = float(np.std(region))
     
-    pattern = "homogeneous" if std_intensity < 0.1 else ("slightly heterogeneous" if std_intensity < 0.2 else "heterogeneous")
-    severity = "high" if max_intensity > 0.9 else ("moderate" if max_intensity > 0.7 else "low")
+    # Determine pattern type based on intensity distribution
+    if std_intensity < 0.1:
+        pattern = "homogeneous"
+    elif std_intensity < 0.2:
+        pattern = "slightly heterogeneous"
+    else:
+        pattern = "heterogeneous"
     
-    return {"mean_intensity": mean_intensity, "max_intensity": max_intensity, "pattern": pattern, "severity": severity}
+    # Determine severity
+    if max_intensity > 0.9:
+        severity = "high"
+    elif max_intensity > 0.7:
+        severity = "moderate"
+    else:
+        severity = "low"
+    
+    return {
+        "mean_intensity": mean_intensity,
+        "max_intensity": max_intensity,
+        "pattern": pattern,
+        "severity": severity
+    }
+
 
 def extract_detailed_findings(heatmap, boxes, original_image_size, confidence):
+    """
+    Extract detailed findings from the heatmap analysis.
+    """
     img_width, img_height = original_image_size
     heatmap_h, heatmap_w = heatmap.shape
     scale_x = img_width / heatmap_w
@@ -398,48 +412,103 @@ def extract_detailed_findings(heatmap, boxes, original_image_size, confidence):
     }
     
     for i, (x1, y1, x2, y2, conf) in enumerate(boxes):
+        # Calculate region size
         width_px = x2 - x1
         height_px = y2 - y1
-        area_percentage = (width_px * height_px) / (img_width * img_height) * 100
+        area_px = width_px * height_px
+        area_percentage = (area_px / (img_width * img_height)) * 100
         
+        # Get location
         location = get_region_location(x1, y1, x2, y2, img_width, img_height)
+        
+        # Get characteristics
         characteristics = analyze_region_characteristics(heatmap, x1, y1, x2, y2, scale_x, scale_y)
         
+        # Determine shape based on aspect ratio
         aspect_ratio = width_px / height_px if height_px > 0 else 1
-        shape = "roughly circular" if 0.8 <= aspect_ratio <= 1.2 else ("horizontally elongated" if aspect_ratio > 1.2 else "vertically elongated")
+        if 0.8 <= aspect_ratio <= 1.2:
+            shape = "roughly circular"
+        elif aspect_ratio > 1.2:
+            shape = "horizontally elongated"
+        else:
+            shape = "vertically elongated"
         
-        findings["regions"].append({
-            "id": i + 1, "confidence": float(conf * 100), "location": location,
-            "size": {"width_px": width_px, "height_px": height_px, "area_percentage": round(area_percentage, 2)},
-            "shape": shape, "characteristics": characteristics, "bbox": {"x1": x1, "y1": y1, "x2": x2, "y2": y2}
-        })
+        region_info = {
+            "id": i + 1,
+            "confidence": float(conf * 100),
+            "location": location,
+            "size": {
+                "width_px": width_px,
+                "height_px": height_px,
+                "area_percentage": round(area_percentage, 2)
+            },
+            "shape": shape,
+            "characteristics": characteristics,
+            "bbox": {"x1": x1, "y1": y1, "x2": x2, "y2": y2}
+        }
+        findings["regions"].append(region_info)
     
+    # Generate summary
     if len(boxes) == 0:
-        findings["summary"] = "Diffuse abnormal patterns detected." if confidence > 0.5 else "No distinct suspicious regions identified."
+        if confidence > 0.5:
+            findings["summary"] = "Diffuse abnormal patterns detected across the tissue without distinct focal masses."
+        else:
+            findings["summary"] = "No distinct suspicious regions identified. Tissue appears uniform and normal."
     elif len(boxes) == 1:
         r = findings["regions"][0]
-        findings["summary"] = f"Single suspicious region in {r['location']['description']} with {r['confidence']:.1f}% confidence."
+        findings["summary"] = f"Single suspicious region detected in the {r['location']['description']} with {r['confidence']:.1f}% confidence. The lesion appears {r['shape']} and shows {r['characteristics'].get('pattern', 'undefined')} density pattern."
     else:
-        locations = list(set([r['location']['quadrant'] for r in findings['regions']]))
-        findings["summary"] = f"Multiple suspicious regions ({len(boxes)}) detected across {', '.join(locations)}."
+        locations = [r['location']['quadrant'] for r in findings['regions']]
+        findings["summary"] = f"Multiple suspicious regions ({len(boxes)}) detected across {', '.join(set(locations))}. This multi-focal pattern warrants immediate clinical evaluation."
     
     return findings
 
+
 def create_gradcam_visualization(original_image, preprocessed_img, model, confidence):
+    """
+    Generate complete Grad-CAM visualization including heatmap, overlay, and bounding boxes.
+    
+    Args:
+        original_image: PIL Image (original upload)
+        preprocessed_img: Preprocessed numpy array for model input
+        model: Trained Keras model
+        confidence: Model prediction confidence
+    
+    Returns:
+        Tuple of (heatmap_array, overlay_image, heatmap_only_image, bbox_image, error_message, detailed_findings)
+        - heatmap_array: Normalized activation heatmap
+        - overlay_image: Heatmap overlaid on original image
+        - heatmap_only_image: Standalone heatmap visualization
+        - bbox_image: Original image with bounding boxes around detected regions (None if no regions)
+        - error_message: Error string if generation failed, None otherwise
+        - detailed_findings: Dictionary with extracted findings from the image
+    """
     last_conv_layer_idx = get_last_conv_layer_index(model)
     
     if last_conv_layer_idx is None:
-        return None, None, None, None, "No conv layer found", None
+        error_msg = "No convolutional layer found in model"
+        print(error_msg)
+        return None, None, None, None, error_msg, None
+    
+    print(f"DEBUG: Found conv layer at index {last_conv_layer_idx}")
+    print(f"DEBUG: Model has {len(model.layers)} layers")
     
     try:
         heatmap = make_gradcam_heatmap(preprocessed_img, model, last_conv_layer_idx)
-        if heatmap is None:
-            return None, None, None, None, "Heatmap generation failed", None
         
+        if heatmap is None:
+            error_msg = "Heatmap generation returned None - gradient calculation may have failed"
+            print(error_msg)
+            return None, None, None, None, error_msg, None
+        
+        print(f"DEBUG: Heatmap generated successfully, shape: {heatmap.shape}")
+        
+        # Create tissue mask to filter out background detections
         img_array = np.array(original_image)
         tissue_mask = create_tissue_mask(img_array, threshold=15)
         
         overlay_image = create_heatmap_overlay(original_image, heatmap, alpha=0.5)
+        print("DEBUG: Overlay created successfully")
         
         fig, ax = plt.subplots(figsize=(6, 6))
         im = ax.imshow(heatmap, cmap='jet')
@@ -447,58 +516,37 @@ def create_gradcam_visualization(original_image, preprocessed_img, model, confid
         ax.set_title('Activation Heatmap', fontsize=14, fontweight='bold', pad=10)
         plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
         plt.tight_layout()
+        
+        # Convert matplotlib figure to PIL Image using buffer
         fig.canvas.draw()
         buf = np.frombuffer(fig.canvas.buffer_rgba(), dtype=np.uint8)
         buf = buf.reshape(fig.canvas.get_width_height()[::-1] + (4,))
+        # Convert RGBA to RGB
         heatmap_only_image = Image.fromarray(buf[:, :, :3])
         plt.close(fig)
         
-        # Detect boxes with tissue mask filtering
-        boxes = detect_bounding_boxes(heatmap, original_image.size, threshold=0.5, min_area=50, 
-                                      tissue_mask=tissue_mask, max_regions=8)
-        
-        # STRICT filter: remove boxes on black background - box center must be on tissue
-        # Also check that box is mostly on tissue (>50%)
-        filtered_boxes = []
-        img_h, img_w = img_array.shape[:2]
-        
-        for (x1, y1, x2, y2, conf) in boxes:
-            # Get safe coordinates
-            x1s = max(0, min(int(x1), img_w-1))
-            y1s = max(0, min(int(y1), img_h-1))
-            x2s = max(0, min(int(x2), img_w-1))
-            y2s = max(0, min(int(y2), img_h-1))
-            
-            if y2s <= y1s or x2s <= x1s:
-                continue
-            
-            # Check box center - must be on tissue
-            cx, cy = (x1s + x2s) // 2, (y1s + y2s) // 2
-            if not tissue_mask[cy, cx]:
-                continue
-            
-            # Check tissue percentage in box - must be >50%
-            box_mask = tissue_mask[y1s:y2s, x1s:x2s]
-            if box_mask.size == 0:
-                continue
-            tissue_pct = np.sum(box_mask) / box_mask.size
-            if tissue_pct < 0.5:
-                continue
-            
-            filtered_boxes.append((x1, y1, x2, y2, conf))
-        
-        boxes = filtered_boxes
-        
+        # Generate bounding boxes for detected regions 
+        # Use original heatmap without tissue mask for better detection
+        boxes = detect_bounding_boxes(heatmap, original_image.size, threshold=0.6, min_area=100, tissue_mask=None)
+        bbox_image = None
         if boxes:
             bbox_image = draw_bounding_boxes(original_image, boxes, box_color='#FF0000', line_width=4)
+            print(f"DEBUG: Detected {len(boxes)} suspicious regions")
         else:
+            # Fallback: show original image if no regions detected
             bbox_image = original_image.copy()
+            print("DEBUG: No distinct high-activation regions detected, showing original")
         
+        # Extract detailed findings
         detailed_findings = extract_detailed_findings(heatmap, boxes, original_image.size, confidence)
+        print(f"DEBUG: Extracted findings: {detailed_findings['summary']}")
         
+        print("DEBUG: Heatmap visualization complete!")
         return heatmap, overlay_image, heatmap_only_image, bbox_image, None, detailed_findings
         
     except Exception as e:
+        error_msg = f"Error generating Grad-CAM: {str(e)}"
+        print(error_msg)
         import traceback
         traceback.print_exc()
-        return None, None, None, None, f"Error: {str(e)}", None
+        return None, None, None, None, error_msg, None
