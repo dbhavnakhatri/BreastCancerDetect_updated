@@ -68,7 +68,7 @@ def make_gradcam_heatmap(img_array, model, last_conv_layer_index, pred_index=Non
     
     return heatmap.numpy()
 
-def create_tissue_mask(img_array, threshold=15):
+def create_tissue_mask(img_array, threshold=20):
     """
     Create a mask identifying tissue (non-background) areas.
     
@@ -82,10 +82,18 @@ def create_tissue_mask(img_array, threshold=15):
     if len(img_array.shape) == 3:
         gray = np.mean(img_array, axis=2)
     else:
-        gray = img_array
+        gray = img_array.copy()
     
     # Tissue is where pixel intensity is above threshold (not black background)
     mask = gray > threshold
+    
+    # Apply morphological operations to clean up the mask
+    # Fill small holes and remove small noise
+    from scipy import ndimage as ndi
+    mask = ndi.binary_fill_holes(mask)
+    mask = ndi.binary_opening(mask, iterations=2)
+    mask = ndi.binary_closing(mask, iterations=2)
+    
     return mask
 
 
@@ -586,16 +594,29 @@ def create_gradcam_visualization(original_image, preprocessed_img, model, confid
         plt.close(fig)
         
         # Generate bounding boxes for detected regions 
-        # Use original heatmap without tissue mask for better detection
-        boxes = detect_bounding_boxes(heatmap, original_image.size, threshold=0.6, min_area=100, tissue_mask=None)
+        # Use tissue_mask to filter out detections on black background
+        boxes = detect_bounding_boxes(heatmap, original_image.size, threshold=0.6, min_area=100, tissue_mask=tissue_mask)
+        
+        # Additional filter: remove boxes that are mostly in black/background areas
+        filtered_boxes = []
+        for (x1, y1, x2, y2, conf) in boxes:
+            # Check how much of the box is on tissue
+            box_tissue_mask = tissue_mask[y1:y2, x1:x2] if y2 > y1 and x2 > x1 else np.array([])
+            if box_tissue_mask.size > 0:
+                tissue_percentage = np.sum(box_tissue_mask) / box_tissue_mask.size
+                # Only keep boxes that are at least 50% on tissue
+                if tissue_percentage >= 0.5:
+                    filtered_boxes.append((x1, y1, x2, y2, conf))
+        
+        boxes = filtered_boxes
         bbox_image = None
         if boxes:
             bbox_image = draw_bounding_boxes(original_image, boxes, box_color='#FF0000', line_width=4)
-            print(f"DEBUG: Detected {len(boxes)} suspicious regions")
+            print(f"DEBUG: Detected {len(boxes)} suspicious regions on tissue")
         else:
             # Fallback: show original image if no regions detected
             bbox_image = original_image.copy()
-            print("DEBUG: No distinct high-activation regions detected, showing original")
+            print("DEBUG: No distinct high-activation regions detected on tissue, showing original")
         
         # Extract detailed findings
         detailed_findings = extract_detailed_findings(heatmap, boxes, original_image.size, confidence)
