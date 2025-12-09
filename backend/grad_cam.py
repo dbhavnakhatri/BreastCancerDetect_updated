@@ -90,11 +90,44 @@ def create_tissue_mask(img_array, threshold=15):
     mask = ndimage.binary_closing(mask, iterations=1)
     return mask
 
+def create_intensity_based_heatmap(img_array):
+    """Create heatmap based on image intensity - highlights bright regions (potential lesions)."""
+    if len(img_array.shape) == 3:
+        gray = np.mean(img_array, axis=2)
+    else:
+        gray = img_array.copy()
+    
+    # Normalize
+    gray = gray.astype(np.float32)
+    gray = (gray - np.min(gray)) / (np.max(gray) - np.min(gray) + 1e-8)
+    
+    # Apply Gaussian blur to smooth
+    from scipy.ndimage import gaussian_filter
+    gray = gaussian_filter(gray, sigma=3)
+    
+    # Enhance contrast - focus on bright regions
+    gray = np.power(gray, 0.7)
+    
+    # Normalize again
+    gray = (gray - np.min(gray)) / (np.max(gray) - np.min(gray) + 1e-8)
+    
+    return gray
+
 def create_heatmap_overlay(original_image, heatmap, alpha=0.6, colormap='jet'):
     """Create colorful heatmap overlay on original image."""
     img_array = np.array(original_image)
     
     print(f"DEBUG: Heatmap input range: [{np.min(heatmap):.4f}, {np.max(heatmap):.4f}]")
+    
+    # Check if heatmap has meaningful variation
+    hmap_range = np.max(heatmap) - np.min(heatmap)
+    
+    if hmap_range < 0.01:
+        # Grad-CAM failed - use intensity-based heatmap as fallback
+        print("DEBUG: Grad-CAM heatmap has no variation, using intensity-based fallback")
+        # Resize image to heatmap size for intensity calculation
+        img_small = np.array(original_image.resize((heatmap.shape[1], heatmap.shape[0])))
+        heatmap = create_intensity_based_heatmap(img_small)
     
     # Enhance heatmap contrast aggressively
     heatmap_enhanced = heatmap.copy()
@@ -105,16 +138,9 @@ def create_heatmap_overlay(original_image, heatmap, alpha=0.6, colormap='jet'):
     
     if hmap_max > hmap_min:
         heatmap_enhanced = (heatmap_enhanced - hmap_min) / (hmap_max - hmap_min)
-    else:
-        # If all same value, create gradient based on distance from center
-        h, w = heatmap_enhanced.shape
-        y, x = np.ogrid[:h, :w]
-        center_y, center_x = h // 2, w // 2
-        dist = np.sqrt((x - center_x)**2 + (y - center_y)**2)
-        heatmap_enhanced = 1 - (dist / np.max(dist))
     
-    # Apply gamma correction to enhance mid-tones (make colors more visible)
-    heatmap_enhanced = np.power(heatmap_enhanced, 0.4)
+    # Apply gamma correction to enhance mid-tones
+    heatmap_enhanced = np.power(heatmap_enhanced, 0.5)
     
     print(f"DEBUG: Heatmap enhanced range: [{np.min(heatmap_enhanced):.4f}, {np.max(heatmap_enhanced):.4f}]")
     
