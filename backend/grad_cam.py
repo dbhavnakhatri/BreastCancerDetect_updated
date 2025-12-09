@@ -57,10 +57,20 @@ def create_tissue_mask(img_array, threshold=15):
     mask = ndimage.binary_closing(mask, iterations=1)
     return mask
 
-def create_heatmap_overlay(original_image, heatmap, alpha=0.4, colormap='jet'):
+def create_heatmap_overlay(original_image, heatmap, alpha=0.5, colormap='jet'):
     img_array = np.array(original_image)
     
-    heatmap_resized = np.array(Image.fromarray((heatmap * 255).astype(np.uint8)).resize(
+    # Enhance heatmap contrast - normalize to full range
+    heatmap_enhanced = heatmap.copy()
+    hmap_min = np.min(heatmap_enhanced)
+    hmap_max = np.max(heatmap_enhanced)
+    if hmap_max > hmap_min:
+        heatmap_enhanced = (heatmap_enhanced - hmap_min) / (hmap_max - hmap_min)
+    
+    # Apply power transform to enhance contrast
+    heatmap_enhanced = np.power(heatmap_enhanced, 0.5)
+    
+    heatmap_resized = np.array(Image.fromarray((heatmap_enhanced * 255).astype(np.uint8)).resize(
         (original_image.size[0], original_image.size[1]), Image.BILINEAR
     ))
     heatmap_resized = heatmap_resized.astype(np.float32) / 255.0
