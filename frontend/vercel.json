@@ -15,5 +15,13 @@
         { "key": "X-XSS-Protection", "value": "1; mode=block" }
       ]
     }
-  ]
+  ],
+  "env": {
+    "REACT_APP_API_BASE_URL": "@api_base_url"
+  },
+  "build": {
+    "env": {
+      "REACT_APP_API_BASE_URL": "@api_base_url"
+    }
+  }
 }

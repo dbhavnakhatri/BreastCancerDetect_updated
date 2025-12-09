@@ -11,6 +11,7 @@ const getDefaultApiBase = () => {
   // Check for environment variable first (for production deployment)
   const envUrl = process.env.REACT_APP_API_BASE_URL;
   if (envUrl && envUrl.trim().length > 0) {
+    console.log("Using API URL from env:", envUrl);
     return envUrl.replace(/\/$/, "");
   }
 
@@ -18,12 +19,16 @@ const getDefaultApiBase = () => {
   if (typeof window !== "undefined") {
     const localHosts = ["localhost", "127.0.0.1", "0.0.0.0"];
     if (localHosts.includes(window.location.hostname)) {
+      console.log("Using local API URL: http://127.0.0.1:8001");
       return "http://127.0.0.1:8001";
     }
   }
 
   // Fallback for production (Render backend)
-  return "https://breast-cancer-73t1.onrender.com";
+  // IMPORTANT: Update this URL to your deployed backend URL
+  const productionUrl = "https://breast-cancer-73t1.onrender.com";
+  console.log("Using production API URL:", productionUrl);
+  return productionUrl;
 };
 
 const buildEndpoint = (base, endpoint) => {
@@ -108,15 +113,25 @@ function AppContent() {
     setStatusMessage("Uploading image for analysis…");
     setErrorMessage("");
 
+    const currentApiUrl = apiUrl("/analyze");
+    console.log("Sending request to:", currentApiUrl);
+
     try {
-      const response = await fetch(apiUrl("/analyze"), {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 minute timeout
+
+      const response = await fetch(currentApiUrl, {
         method: "POST",
         body: formData,
+        signal: controller.signal,
       });
+
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
         const errorBody = await response.json().catch(() => ({}));
-        throw new Error(errorBody.detail || "Analysis failed.");
+        console.error("API Error:", response.status, errorBody);
+        throw new Error(errorBody.detail || `Server error: ${response.status}`);
       }
 
       const data = await response.json();
@@ -160,8 +175,19 @@ function AppContent() {
       setDetailsTab("model");
       setStatusMessage("Analysis complete.");
     } catch (error) {
-      console.error(error);
-      setErrorMessage(error.message || "Backend not reachable.");
+      console.error("Analysis error:", error);
+      
+      let errorMsg = "Backend not reachable.";
+      
+      if (error.name === 'AbortError') {
+        errorMsg = "Request timed out. The backend server may be starting up (this can take 1-2 minutes on free hosting). Please try again.";
+      } else if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+        errorMsg = `Cannot connect to backend at ${apiBase}. Please check if the backend is running and CORS is enabled.`;
+      } else if (error.message) {
+        errorMsg = error.message;
+      }
+      
+      setErrorMessage(errorMsg);
       setStatusMessage("");
     } finally {
       setIsAnalyzing(false);

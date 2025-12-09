@@ -12,5 +12,5 @@ matplotlib>=3.8.0
 scipy>=1.11.0
 reportlab>=4.0.0
 
-# Machine Learning (use tensorflow-cpu for smaller size on free tier)
-tensorflow-cpu==2.15.0
+# Machine Learning (use tensorflow for local, tensorflow-cpu for deployment)
+tensorflow>=2.16.0
