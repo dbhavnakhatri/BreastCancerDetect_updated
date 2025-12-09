@@ -44,7 +44,7 @@ def make_gradcam_heatmap(img_array, model, last_conv_layer_index, pred_index=Non
     
     return heatmap.numpy()
 
-def create_tissue_mask(img_array, threshold=20):
+def create_tissue_mask(img_array, threshold=15):
     """Create mask for breast tissue (non-black areas)."""
     if len(img_array.shape) == 3:
         gray = np.mean(img_array, axis=2)
@@ -52,10 +52,9 @@ def create_tissue_mask(img_array, threshold=20):
         gray = img_array.copy()
     
     mask = gray > threshold
-    # Clean up mask
+    # Clean up mask - less aggressive
     mask = ndimage.binary_fill_holes(mask)
-    mask = ndimage.binary_opening(mask, iterations=2)
-    mask = ndimage.binary_closing(mask, iterations=2)
+    mask = ndimage.binary_closing(mask, iterations=1)
     return mask
 
 def create_heatmap_overlay(original_image, heatmap, alpha=0.4, colormap='jet'):
@@ -66,7 +65,7 @@ def create_heatmap_overlay(original_image, heatmap, alpha=0.4, colormap='jet'):
     ))
     heatmap_resized = heatmap_resized.astype(np.float32) / 255.0
     
-    tissue_mask = create_tissue_mask(img_array, threshold=20)
+    tissue_mask = create_tissue_mask(img_array, threshold=15)
     heatmap_resized = heatmap_resized * tissue_mask
     
     cmap = cm.get_cmap(colormap)
@@ -91,11 +90,11 @@ def get_last_conv_layer_index(model):
         return conv_layer_indices[-1]
     return None
 
-def detect_bounding_boxes(heatmap, original_image_size, threshold=0.6, min_area=100, tissue_mask=None, max_regions=8):
+def detect_bounding_boxes(heatmap, original_image_size, threshold=0.5, min_area=50, tissue_mask=None, max_regions=8):
     """Detect bounding boxes - ONLY on tissue areas, max 8 regions."""
     heatmap_work = heatmap.copy()
     
-    # Apply tissue mask to filter black background
+    # Apply tissue mask to filter black background (if provided)
     if tissue_mask is not None:
         tissue_mask_resized = np.array(Image.fromarray(tissue_mask.astype(np.uint8) * 255).resize(
             (heatmap_work.shape[1], heatmap_work.shape[0]), Image.NEAREST
@@ -110,7 +109,7 @@ def detect_bounding_boxes(heatmap, original_image_size, threshold=0.6, min_area=
     orig_w, orig_h = original_image_size
     scale_x = orig_w / heatmap_w
     scale_y = orig_h / heatmap_h
-    min_box_size = 20  # Minimum box size in pixels
+    min_box_size = 15  # Minimum box size in pixels
     
     for region_id in range(1, num_features + 1):
         region_coords = np.where(labeled_array == region_id)
@@ -311,7 +310,7 @@ def create_gradcam_visualization(original_image, preprocessed_img, model, confid
             return None, None, None, None, "Heatmap generation failed", None
         
         img_array = np.array(original_image)
-        tissue_mask = create_tissue_mask(img_array, threshold=20)
+        tissue_mask = create_tissue_mask(img_array, threshold=15)
         
         overlay_image = create_heatmap_overlay(original_image, heatmap, alpha=0.5)
         
@@ -327,21 +326,31 @@ def create_gradcam_visualization(original_image, preprocessed_img, model, confid
         heatmap_only_image = Image.fromarray(buf[:, :, :3])
         plt.close(fig)
         
-        # IMPORTANT: Use tissue_mask to filter boxes - only on breast, not black area
-        boxes = detect_bounding_boxes(heatmap, original_image.size, threshold=0.6, min_area=100, 
+        # Detect boxes with lower threshold for better detection
+        boxes = detect_bounding_boxes(heatmap, original_image.size, threshold=0.5, min_area=50, 
                                       tissue_mask=tissue_mask, max_regions=8)
         
-        # Extra filter: remove boxes mostly on black background
+        # Filter: remove boxes that are mostly on black background (keep if >40% on tissue)
         filtered_boxes = []
         for (x1, y1, x2, y2, conf) in boxes:
-            x1s, y1s = max(0, min(x1, img_array.shape[1]-1)), max(0, min(y1, img_array.shape[0]-1))
-            x2s, y2s = max(0, min(x2, img_array.shape[1]-1)), max(0, min(y2, img_array.shape[0]-1))
+            x1s = max(0, min(x1, img_array.shape[1]-1))
+            y1s = max(0, min(y1, img_array.shape[0]-1))
+            x2s = max(0, min(x2, img_array.shape[1]-1))
+            y2s = max(0, min(y2, img_array.shape[0]-1))
             if y2s > y1s and x2s > x1s:
                 box_mask = tissue_mask[y1s:y2s, x1s:x2s]
-                if box_mask.size > 0 and np.sum(box_mask) / box_mask.size >= 0.6:
-                    filtered_boxes.append((x1, y1, x2, y2, conf))
+                if box_mask.size > 0:
+                    tissue_pct = np.sum(box_mask) / box_mask.size
+                    # Keep boxes that are at least 40% on tissue
+                    if tissue_pct >= 0.4:
+                        filtered_boxes.append((x1, y1, x2, y2, conf))
         
         boxes = filtered_boxes
+        
+        # If still no boxes, try without tissue filter but with original heatmap
+        if len(boxes) == 0:
+            boxes = detect_bounding_boxes(heatmap, original_image.size, threshold=0.5, min_area=50, 
+                                          tissue_mask=None, max_regions=8)
         
         if boxes:
             bbox_image = draw_bounding_boxes(original_image, boxes, box_color='#FF0000', line_width=4)
