@@ -525,13 +525,41 @@ def create_gradcam_visualization(original_image, preprocessed_img, model, confid
         heatmap_only_image = Image.fromarray(buf[:, :, :3])
         plt.close(fig)
         
-        # Generate bounding boxes for detected regions 
-        # Use original heatmap without tissue mask for better detection
-        boxes = detect_bounding_boxes(heatmap, original_image.size, threshold=0.6, min_area=100, tissue_mask=None)
+        # Generate bounding boxes for detected regions
+        # Use tissue mask to ensure boxes only on breast tissue
+        boxes = detect_bounding_boxes(heatmap, original_image.size, threshold=0.5, min_area=50, tissue_mask=tissue_mask)
+        
+        # Additional filter: remove boxes that are mostly on black background
+        filtered_boxes = []
+        img_h, img_w = img_array.shape[:2]
+        for (x1, y1, x2, y2, conf) in boxes:
+            # Ensure coordinates are within bounds
+            x1s, y1s = max(0, int(x1)), max(0, int(y1))
+            x2s, y2s = min(img_w-1, int(x2)), min(img_h-1, int(y2))
+            
+            if x2s <= x1s or y2s <= y1s:
+                continue
+            
+            # Check if box center is on tissue
+            cx, cy = (x1s + x2s) // 2, (y1s + y2s) // 2
+            if not tissue_mask[cy, cx]:
+                continue
+            
+            # Check tissue percentage in box (must be >40%)
+            box_tissue = tissue_mask[y1s:y2s, x1s:x2s]
+            if box_tissue.size > 0 and np.mean(box_tissue) < 0.4:
+                continue
+            
+            filtered_boxes.append((x1, y1, x2, y2, conf))
+        
+        # Sort by confidence and limit to 10 regions max
+        filtered_boxes = sorted(filtered_boxes, key=lambda b: b[4], reverse=True)[:10]
+        
         bbox_image = None
-        if boxes:
-            bbox_image = draw_bounding_boxes(original_image, boxes, box_color='#FF0000', line_width=4)
-            print(f"DEBUG: Detected {len(boxes)} suspicious regions")
+        if filtered_boxes:
+            bbox_image = draw_bounding_boxes(original_image, filtered_boxes, box_color='#FF0000', line_width=3)
+            print(f"DEBUG: Detected {len(filtered_boxes)} suspicious regions")
+            boxes = filtered_boxes  # Use filtered for findings
         else:
             # Fallback: show original image if no regions detected
             bbox_image = original_image.copy()
