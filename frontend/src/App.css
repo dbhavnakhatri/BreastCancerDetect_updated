@@ -44,7 +44,7 @@ html,
 /* ========= HEADER ========= */
 .header {
   display: flex;
-  justify-content: space-between;
+  justify-content: center;
   align-items: center;
   padding: 16px 24px;
   background: #ffffff;
@@ -56,6 +56,7 @@ html,
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
   flex-wrap: wrap;
   gap: 12px;
+  position: relative;
 }
 
 .logo {
@@ -64,6 +65,7 @@ html,
   gap: 12px;
   font-size: 1.5rem;
   font-weight: 800;
+  justify-content: center;
 }
 
 .logo img {
@@ -86,6 +88,10 @@ html,
   align-items: center;
   gap: 12px;
   flex-shrink: 0;
+  position: absolute;
+  right: 24px;
+  top: 50%;
+  transform: translateY(-50%);
 }
 
 .welcome-text {
@@ -1214,6 +1220,8 @@ html,
   }
 
   .header-right {
+    position: static;
+    transform: none;
     width: 100%;
     justify-content: center;
   }
@@ -1303,6 +1311,8 @@ html,
   }
 
   .header-right {
+    position: static;
+    transform: none;
     width: 100%;
     justify-content: center;
     gap: 8px;
@@ -1452,6 +1462,8 @@ html,
   }
 
   .header-right {
+    position: static;
+    transform: none;
     width: 100%;
     justify-content: center;
     gap: 8px;
@@ -1732,6 +1744,8 @@ html,
   }
 
   .header-right {
+    position: static;
+    transform: none;
     width: 100%;
     justify-content: center;
     gap: 6px;
