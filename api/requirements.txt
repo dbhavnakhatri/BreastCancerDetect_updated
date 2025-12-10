@@ -1,7 +1,0 @@
-fastapi==0.109.0
-mangum==0.17.0
-python-multipart==0.0.6
-pillow==10.2.0
-numpy==1.24.3
-reportlab==4.0.4
-
