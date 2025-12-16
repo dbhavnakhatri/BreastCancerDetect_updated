@@ -1,9 +1,9 @@
 // This file contains the original App logic
 // Renamed from App.js to AppContent.js to avoid confusion
 
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useRef, useEffect } from "react";
 import "./App.css";
-import { FiUploadCloud, FiLogOut } from "react-icons/fi";
+import { FiUploadCloud, FiLogOut, FiChevronLeft, FiChevronRight, FiX } from "react-icons/fi";
 import { useAuth } from "./context/AuthContext";
 import { useNavigate } from "react-router-dom";
 
@@ -50,12 +50,76 @@ function AppContent() {
   const [dragActive, setDragActive] = useState(false);
   const [analysisDone, setAnalysisDone] = useState(false);
   const [visualTab, setVisualTab] = useState("overlay");
-  const [detailsTab, setDetailsTab] = useState("model");
+  const [detailsTab, setDetailsTab] = useState("clinical");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isGeneratingReport, setIsGeneratingReport] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [fullscreenIndex, setFullscreenIndex] = useState(0);
+  const [isZoomed, setIsZoomed] = useState(false);
+
+  // Zoom functionality
+  const zoomImageRef = useRef(null);
+
+  // Reset zoom when visual tab changes
+  useEffect(() => {
+    const img = zoomImageRef.current;
+    if (img) {
+      img.style.transform = 'scale(1)';
+      img.style.transformOrigin = 'center center';
+      setIsZoomed(false);
+    }
+  }, [visualTab]);
+
+  const handleMouseMove = (e) => {
+    if (!isZoomed) return;
+    const img = zoomImageRef.current;
+    if (!img) return;
+    
+    const rect = img.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width) * 100;
+    const y = ((e.clientY - rect.top) / rect.height) * 100;
+    
+    img.style.transformOrigin = `${x}% ${y}%`;
+  };
+
+  const handleImageClick = (e) => {
+    const img = zoomImageRef.current;
+    if (!img) return;
+    
+    if (isZoomed) {
+      // Unzoom
+      img.style.transform = 'scale(1)';
+      img.style.transformOrigin = 'center center';
+      setIsZoomed(false);
+    } else {
+      // Zoom
+      const rect = img.getBoundingClientRect();
+      const x = ((e.clientX - rect.left) / rect.width) * 100;
+      const y = ((e.clientY - rect.top) / rect.height) * 100;
+      img.style.transformOrigin = `${x}% ${y}%`;
+      img.style.transform = 'scale(2.5)';
+      setIsZoomed(true);
+    }
+  };
+
+  const fullscreenImages = [
+    { src: results.overlay, label: "Heatmap Overlay" },
+    { src: results.heatmap, label: "Heatmap Only" },
+    { src: results.bbox, label: "Region Detection" },
+    { src: results.original, label: "Original Image" }
+  ];
+
+  const handleFullscreenPrev = (e) => {
+    e.stopPropagation();
+    setFullscreenIndex((prev) => (prev === 0 ? fullscreenImages.length - 1 : prev - 1));
+  };
+
+  const handleFullscreenNext = (e) => {
+    e.stopPropagation();
+    setFullscreenIndex((prev) => (prev === fullscreenImages.length - 1 ? 0 : prev + 1));
+  };
 
   const handleLogout = () => {
     logout();
@@ -100,7 +164,7 @@ function AppContent() {
     setResults({});
     setFile(null);
     setVisualTab("overlay");
-    setDetailsTab("model");
+    setDetailsTab("clinical");
     setStatusMessage("");
     setErrorMessage("");
   };
@@ -173,7 +237,7 @@ function AppContent() {
 
       setAnalysisDone(true);
       setVisualTab("overlay");
-      setDetailsTab("model");
+      setDetailsTab("clinical");
       setStatusMessage("Analysis complete.");
     } catch (error) {
       console.error("Analysis error:", error);
@@ -285,7 +349,7 @@ function AppContent() {
       <header className="header">
         <div className="logo">
           <img src="/Group 28.png" alt="logo" />
-          <span>Breast Cancer Detection</span>
+          <span>Breast Cancer Detection System</span>
         </div>
         <div className="header-right">
           <span className="welcome-text">Welcome, {user?.name || 'User'}</span>
@@ -377,6 +441,14 @@ function AppContent() {
               </div>
             )}
 
+            {/* AI Summary Section */}
+            <section className="section">
+              <h3 className="section-title">AI Summary</h3>
+              <div className="summary-box malignant">
+                <p>{results.findings?.summary || "Analysis summary not available."}</p>
+              </div>
+            </section>
+
             <section className="section">
               <h3 className="section-title">Prediction Metrics</h3>
               <div className="metric-grid">
@@ -451,10 +523,25 @@ function AppContent() {
                 <div className="visual-image-card" style={{ position: 'relative' }}>
                   {getActiveVisualImage() ? (
                     <>
-                      <img src={getActiveVisualImage()} alt="Visual analysis" />
+                      <div 
+                        className="zoom-container"
+                        onMouseMove={handleMouseMove}
+                        onClick={handleImageClick}
+                      >
+                        <img 
+                          ref={zoomImageRef}
+                          src={getActiveVisualImage()} 
+                          alt="Visual analysis" 
+                          style={{ cursor: isZoomed ? 'zoom-out' : 'zoom-in' }}
+                        />
+                      </div>
                       <button 
                         className="fullscreen-btn"
-                        onClick={() => setIsFullscreen(true)}
+                        onClick={() => {
+                          const tabIndex = visualTab === "overlay" ? 0 : visualTab === "heatmap" ? 1 : visualTab === "bbox" ? 2 : 3;
+                          setFullscreenIndex(tabIndex);
+                          setIsFullscreen(true);
+                        }}
                         title="View Fullscreen"
                       >
                         ⛶
@@ -465,7 +552,7 @@ function AppContent() {
                   )}
                 </div>
                 
-                {/* Fullscreen Modal */}
+                {/* Fullscreen Modal with Slider */}
                 {isFullscreen && (
                   <div className="fullscreen-overlay" onClick={() => setIsFullscreen(false)}>
                     <div className="fullscreen-content" onClick={(e) => e.stopPropagation()}>
@@ -473,9 +560,35 @@ function AppContent() {
                         className="fullscreen-close-btn"
                         onClick={() => setIsFullscreen(false)}
                       >
-                        ✕
+                        <FiX size={28} />
                       </button>
-                      <img src={getActiveVisualImage()} alt="Visual analysis fullscreen" />
+                      
+                      {/* Left Arrow */}
+                      <button className="fullscreen-nav-btn fullscreen-nav-left" onClick={handleFullscreenPrev}>
+                        <FiChevronLeft size={40} />
+                      </button>
+                      
+                      {/* Image */}
+                      <div className="fullscreen-image-container">
+                        <img src={fullscreenImages[fullscreenIndex]?.src} alt="Visual analysis fullscreen" />
+                        <p className="fullscreen-label">{fullscreenImages[fullscreenIndex]?.label}</p>
+                      </div>
+                      
+                      {/* Right Arrow */}
+                      <button className="fullscreen-nav-btn fullscreen-nav-right" onClick={handleFullscreenNext}>
+                        <FiChevronRight size={40} />
+                      </button>
+                      
+                      {/* Dots Indicator */}
+                      <div className="fullscreen-dots">
+                        {fullscreenImages.map((_, idx) => (
+                          <span 
+                            key={idx} 
+                            className={`fullscreen-dot ${idx === fullscreenIndex ? 'active' : ''}`}
+                            onClick={(e) => { e.stopPropagation(); setFullscreenIndex(idx); }}
+                          />
+                        ))}
+                      </div>
                     </div>
                   </div>
                 )}
@@ -483,7 +596,7 @@ function AppContent() {
                 
                 {/* Detailed Analysis Information */}
                 <div className="results-info-card">
-                  <h4 style={{ textAlign: 'center' }}>Understanding Your Results</h4>
+                  <h4 style={{ textAlign: 'center', fontSize: '1.8rem', fontWeight: '700', marginBottom: '20px' }}>Understanding Your Results</h4>
                   
                   {results.result?.toLowerCase().includes("malignant") ? (
                     <div>
@@ -491,13 +604,13 @@ function AppContent() {
                       {results.findings?.regions && results.findings.regions.length > 0 && (
                         <>
                           <p className="regions-header">
-                            🎯 Detected Regions ({results.findings.num_regions})
+                              Detected Regions ({results.findings.num_regions})
                           </p>
                           <div className="regions-grid">
                             {results.findings.regions.map((region, idx) => (
                               <div key={idx} className="region-card">
                                 <div className="region-card-header">
-                                  📍 Region {region.id}: {region.location?.description || 'Unknown'}
+                                    Region {region.id}: {region.location?.description || 'Unknown'}
                                 </div>
                                 <div className="region-card-grid">
                                   <div><span>Confidence:</span> <strong>{region.confidence?.toFixed(1)}%</strong></div>
@@ -547,15 +660,23 @@ function AppContent() {
             </section>
 
             <section className="section">
-              <h3 className="section-title">Model & Risk Details</h3>
+              <h3 className="section-title">Report Details</h3>
               <div className="details-tabs">
                 <button
                   className={`details-tab ${
-                    detailsTab === "model" ? "active" : ""
+                    detailsTab === "clinical" ? "active" : ""
                   }`}
-                  onClick={() => setDetailsTab("model")}
+                  onClick={() => setDetailsTab("clinical")}
                 >
-                  Model Information
+                  Clinical Context
+                </button>
+                <button
+                  className={`details-tab ${
+                    detailsTab === "nextSteps" ? "active" : ""
+                  }`}
+                  onClick={() => setDetailsTab("nextSteps")}
+                >
+                  Next Steps
                 </button>
                 <button
                   className={`details-tab ${
@@ -573,37 +694,9 @@ function AppContent() {
                 >
                   Heatmap Tips
                 </button>
-                <button
-                  className={`details-tab ${
-                    detailsTab === "clinical" ? "active" : ""
-                  }`}
-                  onClick={() => setDetailsTab("clinical")}
-                >
-                  Clinical Context
-                </button>
-                <button
-                  className={`details-tab ${
-                    detailsTab === "nextSteps" ? "active" : ""
-                  }`}
-                  onClick={() => setDetailsTab("nextSteps")}
-                >
-                  Next Steps
-                </button>
               </div>
 
               <div className="details-panel">
-                {detailsTab === "model" && (
-                  <div>
-                    <h4 className="details-heading">⚙️ Model Information</h4>
-                    <ul className="details-list">
-                      <li><strong>Type:</strong> Convolutional Neural Network (CNN)</li>
-                      <li><strong>Input Size:</strong> 224 × 224 × 3 (RGB)</li>
-                      <li><strong>Output:</strong> Binary classification (Sigmoid)</li>
-                      <li><strong>Visualization:</strong> Grad-CAM attention maps</li>
-                      <li><strong>Framework:</strong> TensorFlow/Keras</li>
-                    </ul>
-                  </div>
-                )}
                 {detailsTab === "risk" && (
                   <div>
                     <h4 className="details-heading">Risk Assessment Guide</h4>
@@ -615,7 +708,7 @@ function AppContent() {
                       <li><strong>Very High Risk (75–100%):</strong> Strong indicators of malignancy. Urgent consultation with oncologist required.</li>
                     </ul>
                     <div style={{ marginTop: '16px', padding: '12px', background: 'rgba(255, 200, 220, 0.15)', borderRadius: '8px' }}>
-                      <p style={{ fontSize: '0.9rem', margin: 0 }}>
+                      <p style={{ fontSize: '1.1rem', margin: 0 }}>
                         <strong>Note:</strong> Risk levels are based on AI model confidence. They should be confirmed with 
                         clinical examination, additional imaging (mammography, ultrasound, MRI), and if necessary, tissue biopsy.
                       </p>
@@ -656,7 +749,7 @@ function AppContent() {
                     </ul>
                     
                     <div style={{ marginTop: '16px', padding: '12px', background: 'rgba(255, 200, 220, 0.15)', borderRadius: '8px' }}>
-                      <p style={{ fontSize: '0.9rem', margin: 0 }}>
+                      <p style={{ fontSize: '1.1rem', margin: 0 }}>
                         <strong>Important:</strong> Heatmaps show AI attention, not confirmed disease. Red areas don't 
                         automatically mean cancer, and blue areas don't guarantee health. Medical professionals use multiple 
                         diagnostic tools for accurate assessment.
@@ -666,36 +759,15 @@ function AppContent() {
                 )}
                 {detailsTab === "clinical" && (
                   <div>
-                    <h4 className="details-heading" style={{ textAlign: 'left', fontSize: '1.3rem', marginBottom: '25px', color: '#9C2B6D' }}>Your Image Analysis Details</h4>
-                    
-                    {/* Summary Card */}
-                    <div style={{ 
-                      padding: '20px', 
-                      background: results.result?.toLowerCase().includes("malignant") 
-                        ? 'linear-gradient(135deg, #ffe5e5 0%, #fff5f5 100%)'
-                        : 'linear-gradient(135deg, #e5fff5 0%, #f5fffa 100%)',
-                      borderRadius: '16px',
-                      border: `2px solid ${results.result?.toLowerCase().includes("malignant") ? '#ffc9c9' : '#c9ffe5'}`,
-                      marginBottom: '25px',
-                      boxShadow: '0 2px 8px rgba(0,0,0,0.06)'
-                    }}>
-                      <p style={{ margin: 0, fontSize: '1.05rem', fontWeight: '700', marginBottom: '10px', color: '#9C2B6D', letterSpacing: '0.3px' }}>
-                        AI Summary
-                      </p>
-                      <p style={{ margin: 0, fontSize: '0.95rem', lineHeight: '1.6', color: '#444' }}>
-                        {results.findings?.summary || "Analysis summary not available."}
-                      </p>
-                    </div>
-                    
                     {/* Detection Statistics Table */}
-                    <h4 className="details-heading" style={{ marginTop: '30px', marginBottom: '15px', fontSize: '1.15rem', color: '#9C2B6D' }}>Detection Statistics</h4>
+                    <h4 className="details-heading" style={{ marginTop: '30px', marginBottom: '18px', fontSize: '1.4rem', color: '#9C2B6D' }}>Detection Statistics</h4>
                     <div style={{ overflowX: 'auto', background: 'white', borderRadius: '16px', boxShadow: '0 2px 12px rgba(156, 43, 109, 0.08)', padding: '5px' }}>
-                      <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: '0', fontSize: '0.9rem', marginBottom: '0' }}>
+                      <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: '0', fontSize: '1.1rem', marginBottom: '0' }}>
                         <thead>
                           <tr style={{ background: 'linear-gradient(135deg, #fce7f3 0%, #fbcfe8 100%)' }}>
-                            <th style={{ padding: '14px 16px', textAlign: 'left', borderBottom: 'none', fontWeight: '700', color: '#9C2B6D', borderTopLeftRadius: '12px' }}>Metric</th>
-                            <th style={{ padding: '14px 16px', textAlign: 'left', borderBottom: 'none', fontWeight: '700', color: '#9C2B6D' }}>Value</th>
-                            <th style={{ padding: '14px 16px', textAlign: 'left', borderBottom: 'none', fontWeight: '700', color: '#9C2B6D', borderTopRightRadius: '12px' }}>Description</th>
+                            <th style={{ padding: '16px 18px', textAlign: 'left', borderBottom: 'none', fontWeight: '700', color: '#9C2B6D', borderTopLeftRadius: '12px', fontSize: '1.1rem' }}>Metric</th>
+                            <th style={{ padding: '16px 18px', textAlign: 'left', borderBottom: 'none', fontWeight: '700', color: '#9C2B6D', fontSize: '1.1rem' }}>Value</th>
+                            <th style={{ padding: '16px 18px', textAlign: 'left', borderBottom: 'none', fontWeight: '700', color: '#9C2B6D', borderTopRightRadius: '12px', fontSize: '1.1rem' }}>Description</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -736,33 +808,33 @@ function AppContent() {
                     {/* Detected Regions Table */}
                     {results.findings?.regions && results.findings.regions.length > 0 && (
                       <>
-                        <h4 className="details-heading" style={{ marginTop: '30px', marginBottom: '15px', fontSize: '1.15rem', color: '#9C2B6D' }}>Detected Regions Detail</h4>
+                        <h4 className="details-heading" style={{ marginTop: '30px', marginBottom: '18px', fontSize: '1.4rem', color: '#9C2B6D' }}>Detected Regions Detail</h4>
                         <div style={{ overflowX: 'auto', background: 'white', borderRadius: '16px', boxShadow: '0 2px 12px rgba(156, 43, 109, 0.08)', padding: '5px' }}>
-                          <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: '0', fontSize: '0.88rem', marginBottom: '0' }}>
+                          <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: '0', fontSize: '1.05rem', marginBottom: '0' }}>
                             <thead>
                               <tr style={{ background: 'linear-gradient(135deg, #fce7f3 0%, #fbcfe8 100%)' }}>
-                                <th style={{ padding: '12px 14px', textAlign: 'left', borderBottom: 'none', fontWeight: '700', color: '#9C2B6D', borderTopLeftRadius: '12px' }}>Region</th>
-                                <th style={{ padding: '12px 14px', textAlign: 'left', borderBottom: 'none', fontWeight: '700', color: '#9C2B6D' }}>Location</th>
-                                <th style={{ padding: '12px 14px', textAlign: 'left', borderBottom: 'none', fontWeight: '700', color: '#9C2B6D' }}>Confidence</th>
-                                <th style={{ padding: '12px 14px', textAlign: 'left', borderBottom: 'none', fontWeight: '700', color: '#9C2B6D' }}>Shape</th>
-                                <th style={{ padding: '12px 14px', textAlign: 'left', borderBottom: 'none', fontWeight: '700', color: '#9C2B6D' }}>Pattern</th>
-                                <th style={{ padding: '12px 14px', textAlign: 'left', borderBottom: 'none', fontWeight: '700', color: '#9C2B6D' }}>Severity</th>
-                                <th style={{ padding: '12px 14px', textAlign: 'left', borderBottom: 'none', fontWeight: '700', color: '#9C2B6D', borderTopRightRadius: '12px' }}>Area %</th>
+                                <th style={{ padding: '14px 16px', textAlign: 'left', borderBottom: 'none', fontWeight: '700', color: '#9C2B6D', borderTopLeftRadius: '12px', fontSize: '1.05rem' }}>Region</th>
+                                <th style={{ padding: '14px 16px', textAlign: 'left', borderBottom: 'none', fontWeight: '700', color: '#9C2B6D', fontSize: '1.05rem' }}>Location</th>
+                                <th style={{ padding: '14px 16px', textAlign: 'left', borderBottom: 'none', fontWeight: '700', color: '#9C2B6D', fontSize: '1.05rem' }}>Confidence</th>
+                                <th style={{ padding: '14px 16px', textAlign: 'left', borderBottom: 'none', fontWeight: '700', color: '#9C2B6D', fontSize: '1.05rem' }}>Shape</th>
+                                <th style={{ padding: '14px 16px', textAlign: 'left', borderBottom: 'none', fontWeight: '700', color: '#9C2B6D', fontSize: '1.05rem' }}>Pattern</th>
+                                <th style={{ padding: '14px 16px', textAlign: 'left', borderBottom: 'none', fontWeight: '700', color: '#9C2B6D', fontSize: '1.05rem' }}>Severity</th>
+                                <th style={{ padding: '14px 16px', textAlign: 'left', borderBottom: 'none', fontWeight: '700', color: '#9C2B6D', borderTopRightRadius: '12px', fontSize: '1.05rem' }}>Area %</th>
                               </tr>
                             </thead>
                             <tbody>
                               {results.findings.regions.map((region, idx) => (
                                 <tr key={idx} style={{ background: idx % 2 === 0 ? 'rgba(252, 231, 243, 0.3)' : 'white' }}>
-                                  <td style={{ padding: '12px 14px', borderBottom: idx === results.findings.regions.length - 1 ? 'none' : '1px solid rgba(156, 43, 109, 0.1)', fontWeight: '700', color: '#9C2B6D', fontSize: '0.95rem' }}>#{region.id}</td>
+                                  <td style={{ padding: '14px 16px', borderBottom: idx === results.findings.regions.length - 1 ? 'none' : '1px solid rgba(156, 43, 109, 0.1)', fontWeight: '700', color: '#9C2B6D', fontSize: '1.1rem' }}>#{region.id}</td>
                                   <td style={{ padding: '12px 14px', borderBottom: idx === results.findings.regions.length - 1 ? 'none' : '1px solid rgba(156, 43, 109, 0.1)', color: '#555' }}>{region.location?.quadrant || 'N/A'}</td>
-                                  <td style={{ padding: '12px 14px', borderBottom: idx === results.findings.regions.length - 1 ? 'none' : '1px solid rgba(156, 43, 109, 0.1)', fontWeight: '700', color: region.confidence > 70 ? '#DC2626' : region.confidence > 50 ? '#F59E0B' : '#059669', fontSize: '0.95rem' }}>{region.confidence?.toFixed(1)}%</td>
+                                  <td style={{ padding: '14px 16px', borderBottom: idx === results.findings.regions.length - 1 ? 'none' : '1px solid rgba(156, 43, 109, 0.1)', fontWeight: '700', color: region.confidence > 70 ? '#DC2626' : region.confidence > 50 ? '#F59E0B' : '#059669', fontSize: '1.1rem' }}>{region.confidence?.toFixed(1)}%</td>
                                   <td style={{ padding: '12px 14px', borderBottom: idx === results.findings.regions.length - 1 ? 'none' : '1px solid rgba(156, 43, 109, 0.1)', color: '#666' }}>{region.shape || 'N/A'}</td>
                                   <td style={{ padding: '12px 14px', borderBottom: idx === results.findings.regions.length - 1 ? 'none' : '1px solid rgba(156, 43, 109, 0.1)', color: '#666' }}>{region.characteristics?.pattern || 'N/A'}</td>
                                   <td style={{ padding: '12px 14px', borderBottom: idx === results.findings.regions.length - 1 ? 'none' : '1px solid rgba(156, 43, 109, 0.1)' }}>
                                     <span style={{ 
                                       padding: '4px 10px', 
                                       borderRadius: '14px', 
-                                      fontSize: '0.82rem',
+                                      fontSize: '0.95rem',
                                       fontWeight: '600',
                                       background: region.characteristics?.severity === 'high' ? 'rgba(220, 38, 38, 0.12)' : region.characteristics?.severity === 'moderate' ? 'rgba(245, 158, 11, 0.12)' : 'rgba(16, 185, 129, 0.12)',
                                       color: region.characteristics?.severity === 'high' ? '#DC2626' : region.characteristics?.severity === 'moderate' ? '#F59E0B' : '#059669',
@@ -783,7 +855,7 @@ function AppContent() {
                     {/* No Regions Detected */}
                     {(!results.findings?.regions || results.findings.regions.length === 0) && (
                       <div style={{ padding: '20px', background: 'linear-gradient(135deg, #e5fff5 0%, #f5fffa 100%)', borderRadius: '16px', marginTop: '25px', border: '2px solid #c9ffe5', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                        <p style={{ margin: 0, fontSize: '0.95rem', color: '#059669', lineHeight: '1.6' }}>
+                        <p style={{ margin: 0, fontSize: '1.15rem', color: '#059669', lineHeight: '1.7' }}>
                           ✓ <strong>No distinct suspicious regions detected.</strong> The tissue appears uniform without focal abnormalities.
                         </p>
                       </div>
@@ -865,7 +937,7 @@ function AppContent() {
                     )}
                     
                     <div style={{ marginTop: '20px', padding: '14px', background: 'rgba(192, 37, 108, 0.08)', borderRadius: '10px' }}>
-                      <p style={{ margin: 0, fontSize: '0.95rem', lineHeight: '1.7' }}>
+                      <p style={{ margin: 0, fontSize: '1.15rem', lineHeight: '1.8' }}>
                         <strong>Remember:</strong> This AI analysis is a supplementary screening tool. All findings should be 
                         reviewed and confirmed by qualified healthcare professionals. When in doubt, always consult your doctor.
                       </p>
