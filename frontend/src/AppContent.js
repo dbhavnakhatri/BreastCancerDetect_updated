@@ -55,6 +55,7 @@ function AppContent() {
   const [isGeneratingReport, setIsGeneratingReport] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   const handleLogout = () => {
     logout();
@@ -447,13 +448,37 @@ function AppContent() {
               </div>
 
               <div className="visual-panel">
-                <div className="visual-image-card">
+                <div className="visual-image-card" style={{ position: 'relative' }}>
                   {getActiveVisualImage() ? (
-                    <img src={getActiveVisualImage()} alt="Visual analysis" />
+                    <>
+                      <img src={getActiveVisualImage()} alt="Visual analysis" />
+                      <button 
+                        className="fullscreen-btn"
+                        onClick={() => setIsFullscreen(true)}
+                        title="View Fullscreen"
+                      >
+                        ⛶
+                      </button>
+                    </>
                   ) : (
                     <p className="muted small">Image not available.</p>
                   )}
                 </div>
+                
+                {/* Fullscreen Modal */}
+                {isFullscreen && (
+                  <div className="fullscreen-overlay" onClick={() => setIsFullscreen(false)}>
+                    <div className="fullscreen-content" onClick={(e) => e.stopPropagation()}>
+                      <button 
+                        className="fullscreen-close-btn"
+                        onClick={() => setIsFullscreen(false)}
+                      >
+                        ✕
+                      </button>
+                      <img src={getActiveVisualImage()} alt="Visual analysis fullscreen" />
+                    </div>
+                  </div>
+                )}
                 
                 
                 {/* Detailed Analysis Information */}
