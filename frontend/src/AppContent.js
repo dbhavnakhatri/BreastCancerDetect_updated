@@ -108,7 +108,7 @@ function AppContent() {
     { src: results.overlay, label: "Heatmap Overlay" },
     { src: results.heatmap, label: "Heatmap Only" },
     { src: results.bbox, label: "Region Detection" },
-    { src: results.original, label: "Original Image" }
+    { src: results.original, label: "Type of Cancer detection" }
   ];
 
   const handleFullscreenPrev = (e) => {
@@ -441,14 +441,7 @@ function AppContent() {
               </div>
             )}
 
-            {/* AI Summary Section */}
-            <section className="section">
-              <h3 className="section-title">AI Summary</h3>
-              <div className="summary-box malignant">
-                <p>{results.findings?.summary || "Analysis summary not available."}</p>
-              </div>
-            </section>
-
+            {/* Prediction Metrics Section */}
             <section className="section">
               <h3 className="section-title">Prediction Metrics</h3>
               <div className="metric-grid">
@@ -476,6 +469,14 @@ function AppContent() {
                       : "—"}
                   </h3>
                 </div>
+              </div>
+            </section>
+
+            {/* AI Summary Section */}
+            <section className="section">
+              <h3 className="section-title">AI Summary</h3>
+              <div className="summary-box malignant">
+                <p>{results.findings?.summary || "Analysis summary not available."}</p>
               </div>
             </section>
 
@@ -515,7 +516,7 @@ function AppContent() {
                   }`}
                   onClick={() => setVisualTab("original")}
                 >
-                  Original Image
+                  Type of Cancer detection
                 </button>
               </div>
 
@@ -527,6 +528,7 @@ function AppContent() {
                         className="zoom-container"
                         onMouseMove={handleMouseMove}
                         onClick={handleImageClick}
+                        style={{ position: 'relative' }}
                       >
                         <img 
                           ref={zoomImageRef}
@@ -534,6 +536,131 @@ function AppContent() {
                           alt="Visual analysis" 
                           style={{ cursor: isZoomed ? 'zoom-out' : 'zoom-in' }}
                         />
+                        
+                        {/* Show detection labels on Type of Cancer detection tab */}
+                        {visualTab === "original" && results.findings?.regions && results.findings.regions.length > 0 && (
+                          <svg 
+                            style={{ 
+                              position: 'absolute', 
+                              top: 0, 
+                              left: 0, 
+                              width: '100%', 
+                              height: '100%', 
+                              pointerEvents: 'none',
+                              zIndex: 5
+                            }}
+                            preserveAspectRatio="none"
+                            viewBox="0 0 100 100"
+                          >
+                            {results.findings.regions.map((region, idx) => {
+                              const bbox = region.bbox;
+                              if (!bbox) return null;
+                              
+                              // Get image element to calculate scaling
+                              const imgElement = zoomImageRef.current;
+                              if (!imgElement) return null;
+                              
+                              // Calculate center of bbox as percentage
+                              const centerX = ((bbox.x1 + bbox.x2) / 2 / imgElement.naturalWidth) * 100;
+                              const centerY = ((bbox.y1 + bbox.y2) / 2 / imgElement.naturalHeight) * 100;
+                              
+                              // Calculate top-left for label placement
+                              const labelX = (bbox.x1 / imgElement.naturalWidth) * 100;
+                              const labelY = (bbox.y1 / imgElement.naturalHeight) * 100;
+                              
+                              // Determine color based on severity
+                              const severityColors = {
+                                'high': '#DC2626',
+                                'medium': '#F59E0B',
+                                'low': '#10B981'
+                              };
+                              const color = severityColors[region.severity] || '#6B7280';
+                              
+                              return (
+                                <g key={idx}>
+                                  {/* Connecting line from center to label */}
+                                  <line
+                                    x1={centerX}
+                                    y1={centerY}
+                                    x2={labelX}
+                                    y2={labelY - 3}
+                                    stroke={color}
+                                    strokeWidth="0.3"
+                                    strokeDasharray="0.5,0.5"
+                                    opacity="0.7"
+                                  />
+                                  {/* Circle at detection center */}
+                                  <circle
+                                    cx={centerX}
+                                    cy={centerY}
+                                    r="0.8"
+                                    fill={color}
+                                    opacity="0.8"
+                                  />
+                                </g>
+                              );
+                            })}
+                          </svg>
+                        )}
+                        
+                        {/* Labels as HTML overlays */}
+                        {visualTab === "original" && results.findings?.regions && results.findings.regions.length > 0 && (
+                          <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
+                            {results.findings.regions.map((region, idx) => {
+                              const imgElement = zoomImageRef.current;
+                              if (!imgElement) return null;
+                              
+                              const bbox = region.bbox;
+                              if (!bbox) return null;
+                              
+                              // Calculate label position (top-left of bbox)
+                              const leftPercent = (bbox.x1 / imgElement.naturalWidth) * 100;
+                              const topPercent = (bbox.y1 / imgElement.naturalHeight) * 100;
+                              
+                              // Determine color based on severity
+                              const severityColors = {
+                                'high': '#DC2626',
+                                'medium': '#F59E0B',
+                                'low': '#10B981'
+                              };
+                              const color = severityColors[region.severity] || '#6B7280';
+                              
+                              return (
+                                <div 
+                                  key={idx}
+                                  className="detection-label"
+                                  style={{
+                                    position: 'absolute',
+                                    left: `${leftPercent}%`,
+                                    top: `${topPercent}%`,
+                                    transform: 'translate(-50%, calc(-100% - 10px))',
+                                    background: `linear-gradient(135deg, ${color} 0%, ${color}dd 100%)`,
+                                    color: 'white',
+                                    padding: '8px 12px',
+                                    borderRadius: '8px',
+                                    fontSize: '0.75rem',
+                                    fontWeight: '700',
+                                    boxShadow: `0 4px 12px ${color}66, 0 0 0 2px rgba(255,255,255,0.3)`,
+                                    whiteSpace: 'nowrap',
+                                    pointerEvents: 'auto',
+                                    zIndex: 10,
+                                    maxWidth: '200px',
+                                    textAlign: 'center',
+                                    backdropFilter: 'blur(4px)'
+                                  }}
+                                  title={`Type: ${region.cancer_type || 'Unknown'}\nTechnique: ${region.technique || 'CNN-based'}\nLocation: ${region.location?.description || 'N/A'}\nConfidence: ${region.confidence?.toFixed(1)}%\nSeverity: ${region.severity || 'N/A'}`}
+                                >
+                                  <div style={{ fontSize: '0.65rem', opacity: 0.95, marginBottom: '3px', letterSpacing: '0.3px' }}>
+                                    #{region.id} - {region.confidence?.toFixed(0)}%
+                                  </div>
+                                  <div style={{ fontSize: '0.8rem', fontWeight: '800', letterSpacing: '0.2px' }}>
+                                    {region.cancer_type || 'Abnormality'}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
                       </div>
                       <button 
                         className="fullscreen-btn"
@@ -596,7 +723,7 @@ function AppContent() {
                 
                 {/* Detailed Analysis Information */}
                 <div className="results-info-card">
-                  <h4 style={{ textAlign: 'center', fontSize: '1.8rem', fontWeight: '700', marginBottom: '20px' }}>Understanding Your Results</h4>
+                  <h4>Understanding Your Results</h4>
                   
                   {results.result?.toLowerCase().includes("malignant") ? (
                     <div>
@@ -610,20 +737,24 @@ function AppContent() {
                             {results.findings.regions.map((region, idx) => (
                               <div key={idx} className="region-card">
                                 <div className="region-card-header">
-                                    Region {region.id}: {region.location?.description || 'Unknown'}
+                                    Region {region.id}: {region.cancer_type || 'Abnormality'}
                                 </div>
                                 <div className="region-card-grid">
+                                  <div style={{gridColumn: '1 / -1', paddingBottom: '8px', borderBottom: '1px solid rgba(156, 43, 109, 0.15)'}}>
+                                    <span style={{fontSize: '0.75rem', color: '#8B5A8D'}}>Type:</span> 
+                                    <strong style={{fontSize: '0.95rem', color: '#9C2B6D'}}> {region.cancer_type || 'Unknown'}</strong>
+                                  </div>
+                                  <div><span>Location:</span> <strong>{region.location?.quadrant || 'Unknown'}</strong></div>
                                   <div><span>Confidence:</span> <strong>{region.confidence?.toFixed(1)}%</strong></div>
                                   <div><span>Shape:</span> <strong>{region.shape || '—'}</strong></div>
                                   <div><span>Pattern:</span> <strong>{region.characteristics?.pattern || '—'}</strong></div>
                                   <div>
                                     <span>Severity:</span>{' '}
-                                    <span className={`severity-badge ${region.characteristics?.severity || 'low'}`}>
-                                      {region.characteristics?.severity || 'low'}
+                                    <span className={`severity-badge ${region.severity || 'low'}`}>
+                                      {region.severity || 'low'}
                                     </span>
                                   </div>
                                   <div><span>Area:</span> <strong>{region.size?.area_percentage?.toFixed(2)}%</strong></div>
-                                  <div><span>Quadrant:</span> <strong>{region.location?.quadrant || '—'}</strong></div>
                                 </div>
                               </div>
                             ))}
@@ -745,7 +876,7 @@ function AppContent() {
                       Useful for seeing the exact intensity distribution.</li>
                       <li><strong>Region Detection (BBox):</strong> Shows detected regions of interest with bounding boxes. 
                       Highlights specific areas the model identified.</li>
-                      <li><strong>Original Image:</strong> Unprocessed scan for reference and comparison.</li>
+                      <li><strong>Type of Cancer detection:</strong> Unprocessed scan for reference and comparison.</li>
                     </ul>
                     
                     <div style={{ marginTop: '16px', padding: '12px', background: 'rgba(255, 200, 220, 0.15)', borderRadius: '8px' }}>
@@ -814,10 +945,9 @@ function AppContent() {
                             <thead>
                               <tr style={{ background: 'linear-gradient(135deg, #fce7f3 0%, #fbcfe8 100%)' }}>
                                 <th style={{ padding: '14px 16px', textAlign: 'left', borderBottom: 'none', fontWeight: '700', color: '#9C2B6D', borderTopLeftRadius: '12px', fontSize: '1.05rem' }}>Region</th>
+                                <th style={{ padding: '14px 16px', textAlign: 'left', borderBottom: 'none', fontWeight: '700', color: '#9C2B6D', fontSize: '1.05rem' }}>Cancer Type</th>
                                 <th style={{ padding: '14px 16px', textAlign: 'left', borderBottom: 'none', fontWeight: '700', color: '#9C2B6D', fontSize: '1.05rem' }}>Location</th>
                                 <th style={{ padding: '14px 16px', textAlign: 'left', borderBottom: 'none', fontWeight: '700', color: '#9C2B6D', fontSize: '1.05rem' }}>Confidence</th>
-                                <th style={{ padding: '14px 16px', textAlign: 'left', borderBottom: 'none', fontWeight: '700', color: '#9C2B6D', fontSize: '1.05rem' }}>Shape</th>
-                                <th style={{ padding: '14px 16px', textAlign: 'left', borderBottom: 'none', fontWeight: '700', color: '#9C2B6D', fontSize: '1.05rem' }}>Pattern</th>
                                 <th style={{ padding: '14px 16px', textAlign: 'left', borderBottom: 'none', fontWeight: '700', color: '#9C2B6D', fontSize: '1.05rem' }}>Severity</th>
                                 <th style={{ padding: '14px 16px', textAlign: 'left', borderBottom: 'none', fontWeight: '700', color: '#9C2B6D', borderTopRightRadius: '12px', fontSize: '1.05rem' }}>Area %</th>
                               </tr>
@@ -826,21 +956,20 @@ function AppContent() {
                               {results.findings.regions.map((region, idx) => (
                                 <tr key={idx} style={{ background: idx % 2 === 0 ? 'rgba(252, 231, 243, 0.3)' : 'white' }}>
                                   <td style={{ padding: '14px 16px', borderBottom: idx === results.findings.regions.length - 1 ? 'none' : '1px solid rgba(156, 43, 109, 0.1)', fontWeight: '700', color: '#9C2B6D', fontSize: '1.1rem' }}>#{region.id}</td>
+                                  <td style={{ padding: '12px 14px', borderBottom: idx === results.findings.regions.length - 1 ? 'none' : '1px solid rgba(156, 43, 109, 0.1)', color: '#9C2B6D', fontWeight: '700', fontSize: '1rem' }}>{region.cancer_type || 'Unknown'}</td>
                                   <td style={{ padding: '12px 14px', borderBottom: idx === results.findings.regions.length - 1 ? 'none' : '1px solid rgba(156, 43, 109, 0.1)', color: '#555' }}>{region.location?.quadrant || 'N/A'}</td>
                                   <td style={{ padding: '14px 16px', borderBottom: idx === results.findings.regions.length - 1 ? 'none' : '1px solid rgba(156, 43, 109, 0.1)', fontWeight: '700', color: region.confidence > 70 ? '#DC2626' : region.confidence > 50 ? '#F59E0B' : '#059669', fontSize: '1.1rem' }}>{region.confidence?.toFixed(1)}%</td>
-                                  <td style={{ padding: '12px 14px', borderBottom: idx === results.findings.regions.length - 1 ? 'none' : '1px solid rgba(156, 43, 109, 0.1)', color: '#666' }}>{region.shape || 'N/A'}</td>
-                                  <td style={{ padding: '12px 14px', borderBottom: idx === results.findings.regions.length - 1 ? 'none' : '1px solid rgba(156, 43, 109, 0.1)', color: '#666' }}>{region.characteristics?.pattern || 'N/A'}</td>
                                   <td style={{ padding: '12px 14px', borderBottom: idx === results.findings.regions.length - 1 ? 'none' : '1px solid rgba(156, 43, 109, 0.1)' }}>
                                     <span style={{ 
                                       padding: '4px 10px', 
                                       borderRadius: '14px', 
                                       fontSize: '0.95rem',
                                       fontWeight: '600',
-                                      background: region.characteristics?.severity === 'high' ? 'rgba(220, 38, 38, 0.12)' : region.characteristics?.severity === 'moderate' ? 'rgba(245, 158, 11, 0.12)' : 'rgba(16, 185, 129, 0.12)',
-                                      color: region.characteristics?.severity === 'high' ? '#DC2626' : region.characteristics?.severity === 'moderate' ? '#F59E0B' : '#059669',
+                                      background: region.severity === 'high' ? 'rgba(220, 38, 38, 0.12)' : region.severity === 'medium' ? 'rgba(245, 158, 11, 0.12)' : 'rgba(16, 185, 129, 0.12)',
+                                      color: region.severity === 'high' ? '#DC2626' : region.severity === 'medium' ? '#F59E0B' : '#059669',
                                       textTransform: 'lowercase'
                                     }}>
-                                      {region.characteristics?.severity || 'low'}
+                                      {region.severity || 'low'}
                                     </span>
                                   </td>
                                   <td style={{ padding: '12px 14px', borderBottom: idx === results.findings.regions.length - 1 ? 'none' : '1px solid rgba(156, 43, 109, 0.1)', color: '#555', fontWeight: '600' }}>{region.size?.area_percentage?.toFixed(2)}%</td>
