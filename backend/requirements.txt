@@ -6,6 +6,8 @@ python-multipart==0.0.9
 # Image Processing
 pillow==10.4.0
 numpy>=1.24.0,<2.0.0
+pytesseract>=0.3.10
+opencv-python-headless==4.8.1.78
 
 # Visualization & Reports
 matplotlib>=3.8.0
@@ -14,3 +16,8 @@ reportlab>=4.0.0
 
 # Machine Learning (use tensorflow for local, tensorflow-cpu for deployment)
 tensorflow>=2.16.0
+
+# PyTorch for ensemble inference
+torch>=2.0.0
+torchvision>=0.15.0
+timm>=0.9.0

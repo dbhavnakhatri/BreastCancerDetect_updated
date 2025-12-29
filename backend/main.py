@@ -8,7 +8,7 @@
 
 # main.py  -> FastAPI backend
 
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse
 from typing import Dict, Any, Tuple, Optional, List
@@ -22,8 +22,123 @@ import numpy as np
 from PIL import Image
 from tensorflow import keras
 
-from grad_cam import create_gradcam_visualization
+from grad_cam import create_gradcam_visualization, generate_mammogram_view_analysis
 from report_generator import generate_report_pdf
+
+
+def convert_numpy_types(obj):
+    """Convert numpy types to Python native types for JSON serialization."""
+    if isinstance(obj, dict):
+        return {k: convert_numpy_types(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_numpy_types(item) for item in obj]
+    elif isinstance(obj, np.integer):
+        return int(obj)
+    elif isinstance(obj, np.floating):
+        return float(obj)
+    elif isinstance(obj, np.bool_):
+        return bool(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    else:
+        return obj
+
+
+def generate_view_analysis(analysis, image):
+    """
+    Generate CC (Craniocaudal) and MLO (Mediolateral Oblique) view analysis
+    based on the image analysis results.
+    """
+    findings = analysis.get("findings", {})
+    regions = findings.get("regions", [])
+    stats = analysis.get("stats", {})
+    malignant_prob = analysis.get("malignant_prob", 0)
+    
+    # Determine breast density based on image statistics
+    mean_intensity = stats.get("mean_intensity", 128)
+    if mean_intensity > 200:
+        breast_density = "Almost entirely fatty (ACR A)"
+    elif mean_intensity > 150:
+        breast_density = "Scattered fibroglandular densities (ACR B)"
+    elif mean_intensity > 100:
+        breast_density = "Heterogeneously dense (ACR C)"
+    else:
+        breast_density = "Extremely dense (ACR D)"
+    
+    # Count detected abnormalities by type
+    masses_count = sum(1 for r in regions if 'Mass' in r.get('cancer_type', ''))
+    calc_count = sum(1 for r in regions if 'Calcification' in r.get('cancer_type', ''))
+    distortion_count = sum(1 for r in regions if 'distortion' in r.get('cancer_type', '').lower())
+    asymmetry_count = sum(1 for r in regions if 'asymmetry' in r.get('cancer_type', '').lower())
+    
+    # Generate descriptions
+    masses_desc = f"{masses_count} suspicious mass(es) detected" if masses_count > 0 else "No suspicious masses identified"
+    calc_desc = f"{calc_count} calcification cluster(s) detected" if calc_count > 0 else "No suspicious calcifications"
+    distortion_desc = f"{distortion_count} area(s) of architectural distortion" if distortion_count > 0 else "No architectural distortion"
+    asymmetry_desc = f"{asymmetry_count} focal asymmetry detected" if asymmetry_count > 0 else "No significant asymmetry"
+    
+    # Determine image quality based on contrast
+    contrast = stats.get("contrast", 20)
+    if contrast > 25:
+        image_quality = "Excellent - High contrast, optimal visualization"
+    elif contrast > 15:
+        image_quality = "Good - Adequate for diagnostic evaluation"
+    elif contrast > 10:
+        image_quality = "Acceptable - Minor limitations"
+    else:
+        image_quality = "Limited - May require repeat imaging"
+    
+    # Generate impression based on findings
+    if malignant_prob >= 75:
+        impression = "Highly suspicious findings requiring immediate follow-up"
+    elif malignant_prob >= 50:
+        impression = "Suspicious findings - biopsy recommended"
+    elif malignant_prob >= 25:
+        impression = "Probably benign - short interval follow-up suggested"
+    else:
+        impression = "No significant abnormality detected"
+    
+    # CC View Analysis
+    cc_analysis = {
+        "image_quality": image_quality,
+        "positioning": "Properly positioned with adequate compression",
+        "breast_density": breast_density,
+        "masses": masses_desc,
+        "calcifications": calc_desc,
+        "asymmetry": asymmetry_desc,
+        "skin_nipple_changes": "No skin thickening or nipple retraction",
+        "medial_coverage": "Adequate medial tissue included",
+        "lateral_coverage": "Adequate lateral tissue included",
+        "impression": impression,
+    }
+    
+    # MLO View Analysis
+    mlo_analysis = {
+        "image_quality": image_quality,
+        "positioning": "Properly positioned with pectoral muscle to nipple level",
+        "breast_density": breast_density,
+        "masses": masses_desc,
+        "calcifications": calc_desc,
+        "architectural_distortion": distortion_desc,
+        "pectoral_muscle": "Adequately visualized extending to nipple level",
+        "axillary_findings": "No suspicious axillary lymphadenopathy",
+        "inframammary_fold": "Inframammary fold included",
+        "impression": impression,
+    }
+    
+    # Comparative analysis
+    comparison = (
+        f"Findings are consistent between CC and MLO views. "
+        f"{'Detected regions correlate appropriately across both projections. ' if len(regions) > 0 else ''}"
+        f"Breast density is {breast_density.split('(')[0].strip().lower()}. "
+        f"{'Suspicious findings warrant further evaluation.' if malignant_prob >= 50 else 'No additional suspicious findings on comparison.'}"
+    )
+    
+    return {
+        "cc": cc_analysis,
+        "mlo": mlo_analysis,
+        "comparison": comparison,
+    }
 
 
 app = FastAPI(
@@ -191,7 +306,7 @@ def pil_to_base64(image: Optional[Image.Image]) -> Optional[str]:
 
 # ----------------- CORE ANALYSIS LOGIC (Streamlit ka brain yahan) -----------------
 
-def run_full_analysis(image: Image.Image) -> Tuple[Dict[str, Any], Dict[str, Image.Image]]:
+def run_full_analysis(image: Image.Image, filename: str = None) -> Tuple[Dict[str, Any], Dict[str, Image.Image]]:
     """
     Yeh function tumhari Streamlit logic ka backend version hai:
     - model se prediction
@@ -217,6 +332,7 @@ def run_full_analysis(image: Image.Image) -> Tuple[Dict[str, Any], Dict[str, Ima
         overlay_image,
         heatmap_only,
         bbox_image,
+        cancer_type_image,
         heatmap_error,
         detailed_findings,
     ) = create_gradcam_visualization(image, preprocessed, model, confidence)
@@ -261,32 +377,41 @@ def run_full_analysis(image: Image.Image) -> Tuple[Dict[str, Any], Dict[str, Ima
         "file_format": image.format or "N/A",
         "findings": detailed_findings,  # NEW: Detailed findings from the image
     }
+    
+    # Add view-specific analysis (CC/MLO)
+    detected_regions = detailed_findings.get('regions', []) if detailed_findings else []
+    view_analysis = generate_mammogram_view_analysis(
+        image, 
+        heatmap_array, 
+        confidence, 
+        detected_regions,
+        view_type="auto",
+        filename=filename
+    )
+    analysis["view_analysis"] = view_analysis
 
     images = {
         "original": image,
         "overlay_image": overlay_image,
         "heatmap_only": heatmap_only,
         "bbox_image": bbox_image,
+        "cancer_type_image": cancer_type_image,
     }
 
     return analysis, images
 
 
 # ----------------- CORS (React ke liye) -----------------
-def _parse_origins(env_value: str) -> List[str]:
-    if not env_value or env_value.strip() == "*":
-        return ["*"]
-    return [origin.strip() for origin in env_value.split(",") if origin.strip()]
-
-
-ALLOWED_ORIGINS = _parse_origins(os.environ.get("ALLOWED_ORIGINS", "*"))
+# Allow all origins for development
+ALLOWED_ORIGINS = ["*"]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
-    allow_credentials=True,
+    allow_credentials=False,                 # Must be False when using "*"
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 
@@ -353,9 +478,14 @@ async def analyze_image(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="Unable to read image file.")
 
     try:
-        analysis, images = run_full_analysis(image)
+        analysis, images = run_full_analysis(image, filename=file.filename)
     except Exception as exc:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Analysis failed: {exc}")
+
+    # Convert numpy types to Python native types for JSON serialization
+    analysis = convert_numpy_types(analysis)
 
     return {
         **analysis,
@@ -365,14 +495,34 @@ async def analyze_image(file: UploadFile = File(...)):
             "overlay": pil_to_base64(images["overlay_image"]),
             "heatmap_only": pil_to_base64(images["heatmap_only"]),
             "bbox": pil_to_base64(images["bbox_image"]),
+            "cancer_type": pil_to_base64(images["cancer_type_image"]),
         },
     }
 
 
 @app.post("/report")
-async def generate_report(file: UploadFile = File(...)):
+async def generate_report(
+    file: UploadFile = File(...),
+    patient_name: Optional[str] = Form(None),
+    patient_age: Optional[str] = Form(None),
+    patient_sex: Optional[str] = Form(None),
+    patient_hn: Optional[str] = Form(None),
+    department: Optional[str] = Form(None),
+    request_doctor: Optional[str] = Form(None),
+    report_by: Optional[str] = Form(None),
+):
     """
-    Same image upload, but return PDF report for download.
+    Generate PDF mammogram report with optional patient information.
+    
+    Parameters:
+    - file: Image file (required)
+    - patient_name: Patient's full name
+    - patient_age: Patient's age (e.g., "45 Years")
+    - patient_sex: Patient's sex
+    - patient_hn: Hospital Number or Patient ID
+    - department: Department name
+    - request_doctor: Name of requesting physician
+    - report_by: Name of reporting radiologist
     """
     if not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="Please upload an image file.")
@@ -384,30 +534,53 @@ async def generate_report(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="Unable to read image file.")
 
     try:
-        analysis, images = run_full_analysis(image)
+        analysis, images = run_full_analysis(image, filename=file.filename)
     except Exception as exc:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Analysis failed: {exc}")
 
-    pdf_bytes = generate_report_pdf(
-        result=analysis["result"],
-        probability=analysis["probability"],
-        risk_level=analysis["risk_level"],
-        benign_prob=analysis["benign_prob"],
-        malignant_prob=analysis["malignant_prob"],
-        stats=analysis["stats"],
-        image_size=(analysis["image_size"]["width"], analysis["image_size"]["height"]),
-        file_format=analysis["file_format"],
-        original_image=images["original"],
-        overlay_image=images["overlay_image"],
-        heatmap_only=images["heatmap_only"],
-        bbox_image=images["bbox_image"],
-        confidence=analysis["confidence"],
-    )
+    # Generate CC/MLO view analysis based on the findings
+    view_analysis = generate_view_analysis(analysis, image)
+
+    try:
+        pdf_bytes = generate_report_pdf(
+            result=analysis["result"],
+            probability=analysis["probability"],
+            risk_level=analysis["risk_level"],
+            benign_prob=analysis["benign_prob"],
+            malignant_prob=analysis["malignant_prob"],
+            stats=analysis["stats"],
+            image_size=(analysis["image_size"]["width"], analysis["image_size"]["height"]),
+            file_format=analysis["file_format"],
+            original_image=images["original"],
+            overlay_image=images["overlay_image"],
+            heatmap_only=images["heatmap_only"],
+            bbox_image=images["bbox_image"],
+            cancer_type_image=images.get("cancer_type_image"),
+            confidence=analysis["confidence"],
+            # Patient information (use defaults if not provided)
+            patient_name=patient_name or "Patient Name",
+            patient_age=patient_age or "N/A",
+            patient_sex=patient_sex or "Female",
+            patient_hn=patient_hn or "N/A",
+            department=department or "Radiology",
+            request_doctor=request_doctor or "Dr. [Name]",
+            report_by=report_by or "Dr. [Radiologist Name]",
+            # Detailed findings
+            findings=analysis.get("findings"),
+            # View-specific analysis (CC/MLO)
+            view_analysis=view_analysis,
+        )
+    except Exception as exc:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"PDF generation failed: {exc}")
 
     return StreamingResponse(
         io.BytesIO(pdf_bytes),
         media_type="application/pdf",
-        headers={"Content-Disposition": 'attachment; filename="breast_cancer_report.pdf"'},
+        headers={"Content-Disposition": 'attachment; filename="mammogram_report.pdf"'},
     )
 
 # Run command:

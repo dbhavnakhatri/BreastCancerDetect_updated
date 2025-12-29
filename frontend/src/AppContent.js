@@ -76,18 +76,18 @@ function AppContent() {
     if (!isZoomed) return;
     const img = zoomImageRef.current;
     if (!img) return;
-    
+
     const rect = img.getBoundingClientRect();
     const x = ((e.clientX - rect.left) / rect.width) * 100;
     const y = ((e.clientY - rect.top) / rect.height) * 100;
-    
+
     img.style.transformOrigin = `${x}% ${y}%`;
   };
 
   const handleImageClick = (e) => {
     const img = zoomImageRef.current;
     if (!img) return;
-    
+
     if (isZoomed) {
       // Unzoom
       img.style.transform = 'scale(1)';
@@ -211,6 +211,7 @@ function AppContent() {
         overlay: asDataUrl(images.overlay),
         heatmap: asDataUrl(images.heatmap_only),
         bbox: asDataUrl(images.bbox),
+        cancer_type: asDataUrl(images.cancer_type),
         malignant: data.malignant_prob ?? null,
         benign: data.benign_prob ?? null,
         risk: data.risk_level ?? "Unavailable",
@@ -221,9 +222,10 @@ function AppContent() {
         rawScore: data.confidence ?? null,
         threshold: data.threshold ?? 0.5,
         stats: data.stats || {},
-        findings: data.findings || null,  // NEW: Detailed findings from backend
+        findings: data.findings || null,  // Detailed findings from backend
+        view_analysis: data.view_analysis || null,  // CC/MLO view detection
       };
-      
+
       // Debug logging
       console.log("Analysis Results:", {
         result: resultData.result,
@@ -232,7 +234,7 @@ function AppContent() {
         benignProb: resultData.benign,
         confidence: resultData.confidence
       });
-      
+
       setResults(resultData);
 
       setAnalysisDone(true);
@@ -241,9 +243,9 @@ function AppContent() {
       setStatusMessage("Analysis complete.");
     } catch (error) {
       console.error("Analysis error:", error);
-      
+
       let errorMsg = "Backend not reachable.";
-      
+
       if (error.name === 'AbortError') {
         errorMsg = "Request timed out. The backend server may be starting up (this can take 1-2 minutes on free hosting). Please try again.";
       } else if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
@@ -251,7 +253,7 @@ function AppContent() {
       } else if (error.message) {
         errorMsg = error.message;
       }
-      
+
       setErrorMessage(errorMsg);
       setStatusMessage("");
     } finally {
@@ -260,39 +262,61 @@ function AppContent() {
   };
 
   const handleDownloadReport = async () => {
+    console.log("🔵 Download Report button clicked!");
+    
     if (!file) {
+      console.error("❌ No file found!");
       setErrorMessage("Please upload a file before requesting the report.");
       return;
     }
 
+    console.log("✅ File found:", file.name);
     const formData = new FormData();
     formData.append("file", file);
+    
     setIsGeneratingReport(true);
     setErrorMessage("");
+    setStatusMessage("Generating report...");
 
     try {
+      console.log("📤 Sending request to:", apiUrl("/report"));
       const response = await fetch(apiUrl("/report"), {
         method: "POST",
         body: formData,
       });
 
+      console.log("📥 Response status:", response.status);
+
       if (!response.ok) {
         const errorBody = await response.json().catch(() => ({}));
+        console.error("❌ Response error:", errorBody);
         throw new Error(errorBody.detail || "Failed to generate report.");
       }
 
+      console.log("✅ Getting blob...");
       const blob = await response.blob();
+      console.log("✅ Blob size:", blob.size, "bytes");
+      
       const url = window.URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
-      anchor.download = "breast_cancer_report.pdf";
+      anchor.download = "mammogram_report.pdf";
       document.body.appendChild(anchor);
+      
+      console.log("🖱️ Triggering download...");
       anchor.click();
-      anchor.remove();
-      window.URL.revokeObjectURL(url);
+      
+      setTimeout(() => {
+        anchor.remove();
+        window.URL.revokeObjectURL(url);
+        console.log("✅ Download complete!");
+      }, 100);
+      
+      setStatusMessage("Report downloaded successfully!");
+      setTimeout(() => setStatusMessage(""), 3000);
     } catch (error) {
-      console.error(error);
-      setErrorMessage(error.message || "Error while downloading report.");
+      console.error("❌ Error in handleDownloadReport:", error);
+      setErrorMessage(error.message || "Error while downloading report. Check console for details.");
     } finally {
       setIsGeneratingReport(false);
     }
@@ -305,7 +329,7 @@ function AppContent() {
       case "bbox":
         return results.bbox;
       case "original":
-        return results.original;
+        return results.cancer_type || results.original;
       case "overlay":
       default:
         return results.overlay;
@@ -421,7 +445,7 @@ function AppContent() {
       ) : (
         <main className="analysis-container">
           <section className="analysis-card">
-            <div className="result-header">
+            <div className="result-header" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
               <h2 className={`result-title ${getResultClass()}`}>
                 {results.result || "Analysis Result"}
               </h2>
@@ -489,17 +513,15 @@ function AppContent() {
 
               <div className="visual-tabs">
                 <button
-                  className={`visual-tab ${
-                    visualTab === "overlay" ? "active" : ""
-                  }`}
+                  className={`visual-tab ${visualTab === "overlay" ? "active" : ""
+                    }`}
                   onClick={() => setVisualTab("overlay")}
                 >
                   Heatmap Overlay
                 </button>
                 <button
-                  className={`visual-tab ${
-                    visualTab === "heatmap" ? "active" : ""
-                  }`}
+                  className={`visual-tab ${visualTab === "heatmap" ? "active" : ""
+                    }`}
                   onClick={() => setVisualTab("heatmap")}
                 >
                   Heatmap Only
@@ -511,9 +533,8 @@ function AppContent() {
                   Region Detection (BBox)
                 </button>
                 <button
-                  className={`visual-tab ${
-                    visualTab === "original" ? "active" : ""
-                  }`}
+                  className={`visual-tab ${visualTab === "original" ? "active" : ""
+                    }`}
                   onClick={() => setVisualTab("original")}
                 >
                   Type of Cancer detection
@@ -524,145 +545,61 @@ function AppContent() {
                 <div className="visual-image-card" style={{ position: 'relative' }}>
                   {getActiveVisualImage() ? (
                     <>
-                      <div 
+                      <div
                         className="zoom-container"
                         onMouseMove={handleMouseMove}
                         onClick={handleImageClick}
                         style={{ position: 'relative' }}
                       >
-                        <img 
-                          ref={zoomImageRef}
-                          src={getActiveVisualImage()} 
-                          alt="Visual analysis" 
-                          style={{ cursor: isZoomed ? 'zoom-out' : 'zoom-in' }}
-                        />
-                        
-                        {/* Show detection labels on Type of Cancer detection tab */}
-                        {visualTab === "original" && results.findings?.regions && results.findings.regions.length > 0 && (
-                          <svg 
-                            style={{ 
-                              position: 'absolute', 
-                              top: 0, 
-                              left: 0, 
-                              width: '100%', 
-                              height: '100%', 
-                              pointerEvents: 'none',
-                              zIndex: 5
-                            }}
-                            preserveAspectRatio="none"
-                            viewBox="0 0 100 100"
-                          >
-                            {results.findings.regions.map((region, idx) => {
-                              const bbox = region.bbox;
-                              if (!bbox) return null;
-                              
-                              // Get image element to calculate scaling
-                              const imgElement = zoomImageRef.current;
-                              if (!imgElement) return null;
-                              
-                              // Calculate center of bbox as percentage
-                              const centerX = ((bbox.x1 + bbox.x2) / 2 / imgElement.naturalWidth) * 100;
-                              const centerY = ((bbox.y1 + bbox.y2) / 2 / imgElement.naturalHeight) * 100;
-                              
-                              // Calculate top-left for label placement
-                              const labelX = (bbox.x1 / imgElement.naturalWidth) * 100;
-                              const labelY = (bbox.y1 / imgElement.naturalHeight) * 100;
-                              
-                              // Determine color based on severity
-                              const severityColors = {
-                                'high': '#DC2626',
-                                'medium': '#F59E0B',
-                                'low': '#10B981'
-                              };
-                              const color = severityColors[region.severity] || '#6B7280';
-                              
-                              return (
-                                <g key={idx}>
-                                  {/* Connecting line from center to label */}
-                                  <line
-                                    x1={centerX}
-                                    y1={centerY}
-                                    x2={labelX}
-                                    y2={labelY - 3}
-                                    stroke={color}
-                                    strokeWidth="0.3"
-                                    strokeDasharray="0.5,0.5"
-                                    opacity="0.7"
-                                  />
-                                  {/* Circle at detection center */}
-                                  <circle
-                                    cx={centerX}
-                                    cy={centerY}
-                                    r="0.8"
-                                    fill={color}
-                                    opacity="0.8"
-                                  />
-                                </g>
-                              );
-                            })}
-                          </svg>
-                        )}
-                        
-                        {/* Labels as HTML overlays */}
-                        {visualTab === "original" && results.findings?.regions && results.findings.regions.length > 0 && (
-                          <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
-                            {results.findings.regions.map((region, idx) => {
-                              const imgElement = zoomImageRef.current;
-                              if (!imgElement) return null;
-                              
-                              const bbox = region.bbox;
-                              if (!bbox) return null;
-                              
-                              // Calculate label position (top-left of bbox)
-                              const leftPercent = (bbox.x1 / imgElement.naturalWidth) * 100;
-                              const topPercent = (bbox.y1 / imgElement.naturalHeight) * 100;
-                              
-                              // Determine color based on severity
-                              const severityColors = {
-                                'high': '#DC2626',
-                                'medium': '#F59E0B',
-                                'low': '#10B981'
-                              };
-                              const color = severityColors[region.severity] || '#6B7280';
-                              
-                              return (
-                                <div 
-                                  key={idx}
-                                  className="detection-label"
-                                  style={{
-                                    position: 'absolute',
-                                    left: `${leftPercent}%`,
-                                    top: `${topPercent}%`,
-                                    transform: 'translate(-50%, calc(-100% - 10px))',
-                                    background: `linear-gradient(135deg, ${color} 0%, ${color}dd 100%)`,
-                                    color: 'white',
-                                    padding: '8px 12px',
-                                    borderRadius: '8px',
-                                    fontSize: '0.75rem',
-                                    fontWeight: '700',
-                                    boxShadow: `0 4px 12px ${color}66, 0 0 0 2px rgba(255,255,255,0.3)`,
-                                    whiteSpace: 'nowrap',
-                                    pointerEvents: 'auto',
-                                    zIndex: 10,
-                                    maxWidth: '200px',
-                                    textAlign: 'center',
-                                    backdropFilter: 'blur(4px)'
-                                  }}
-                                  title={`Type: ${region.cancer_type || 'Unknown'}\nTechnique: ${region.technique || 'CNN-based'}\nLocation: ${region.location?.description || 'N/A'}\nConfidence: ${region.confidence?.toFixed(1)}%\nSeverity: ${region.severity || 'N/A'}`}
-                                >
-                                  <div style={{ fontSize: '0.65rem', opacity: 0.95, marginBottom: '3px', letterSpacing: '0.3px' }}>
-                                    #{region.id} - {region.confidence?.toFixed(0)}%
-                                  </div>
-                                  <div style={{ fontSize: '0.8rem', fontWeight: '800', letterSpacing: '0.2px' }}>
-                                    {region.cancer_type || 'Abnormality'}
-                                  </div>
-                                </div>
-                              );
-                            })}
+                        {/* View Label Overlay */}
+                        {results.view_analysis && results.view_analysis.view_code && (
+                          <div style={{
+                            position: 'absolute',
+                            top: '12px',
+                            left: '12px',
+                            background: 'linear-gradient(135deg, rgba(0, 0, 0, 0.85) 0%, rgba(0, 0, 0, 0.75) 100%)',
+                            color: 'white',
+                            padding: '10px 18px',
+                            borderRadius: '8px',
+                            fontWeight: '700',
+                            fontSize: '1.1rem',
+                            zIndex: 10,
+                            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.4)',
+                            backdropFilter: 'blur(10px)',
+                            border: '2px solid rgba(255, 255, 255, 0.2)',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '4px'
+                          }}>
+                            <div style={{
+                              fontSize: '1.3rem',
+                              letterSpacing: '1px',
+                              color: '#00D9FF',
+                              textShadow: '0 0 10px rgba(0, 217, 255, 0.5)'
+                            }}>
+                              {results.view_analysis.view_code} View
+                            </div>
+                            <div style={{
+                              fontSize: '0.75rem',
+                              fontWeight: '500',
+                              color: 'rgba(255, 255, 255, 0.85)',
+                              letterSpacing: '0.5px'
+                            }}>
+                              {results.view_analysis.view_code.includes('MLO') 
+                                ? 'Mediolateral Oblique: Angled side view' 
+                                : 'Craniocaudal: Top-to-bottom view'}
+                            </div>
                           </div>
                         )}
+                        <img
+                          ref={zoomImageRef}
+                          src={getActiveVisualImage()}
+                          alt="Visual analysis"
+                          style={{ cursor: isZoomed ? 'zoom-out' : 'zoom-in' }}
+                        />
+
                       </div>
-                      <button 
+                      <button
                         className="fullscreen-btn"
                         onClick={() => {
                           const tabIndex = visualTab === "overlay" ? 0 : visualTab === "heatmap" ? 1 : visualTab === "bbox" ? 2 : 3;
@@ -678,39 +615,39 @@ function AppContent() {
                     <p className="muted small">Image not available.</p>
                   )}
                 </div>
-                
+
                 {/* Fullscreen Modal with Slider */}
                 {isFullscreen && (
                   <div className="fullscreen-overlay" onClick={() => setIsFullscreen(false)}>
                     <div className="fullscreen-content" onClick={(e) => e.stopPropagation()}>
-                      <button 
+                      <button
                         className="fullscreen-close-btn"
                         onClick={() => setIsFullscreen(false)}
                       >
                         <FiX size={28} />
                       </button>
-                      
+
                       {/* Left Arrow */}
                       <button className="fullscreen-nav-btn fullscreen-nav-left" onClick={handleFullscreenPrev}>
                         <FiChevronLeft size={40} />
                       </button>
-                      
+
                       {/* Image */}
                       <div className="fullscreen-image-container">
                         <img src={fullscreenImages[fullscreenIndex]?.src} alt="Visual analysis fullscreen" />
                         <p className="fullscreen-label">{fullscreenImages[fullscreenIndex]?.label}</p>
                       </div>
-                      
+
                       {/* Right Arrow */}
                       <button className="fullscreen-nav-btn fullscreen-nav-right" onClick={handleFullscreenNext}>
                         <FiChevronRight size={40} />
                       </button>
-                      
+
                       {/* Dots Indicator */}
                       <div className="fullscreen-dots">
                         {fullscreenImages.map((_, idx) => (
-                          <span 
-                            key={idx} 
+                          <span
+                            key={idx}
                             className={`fullscreen-dot ${idx === fullscreenIndex ? 'active' : ''}`}
                             onClick={(e) => { e.stopPropagation(); setFullscreenIndex(idx); }}
                           />
@@ -719,35 +656,195 @@ function AppContent() {
                     </div>
                   </div>
                 )}
-                
-                
+
+
                 {/* Detailed Analysis Information */}
                 <div className="results-info-card">
                   <h4>Understanding Your Results</h4>
-                  
+
+                  {/* Comprehensive Image Analysis Section - Always shown */}
+                  {results.findings?.comprehensive_analysis && (
+                    <div style={{ marginBottom: '24px' }}>
+                      <p className="regions-header" style={{ marginBottom: '16px', fontSize: '1.1rem' }}>
+                        📊 Comprehensive Image Analysis
+                      </p>
+                      
+                      {/* Row 1: Primary Analysis - Breast Density & Tissue Texture */}
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '14px', marginBottom: '14px' }}>
+                        {/* Breast Density */}
+                        {results.findings.comprehensive_analysis.breast_density && (
+                          <div style={{ padding: '14px', background: 'linear-gradient(135deg, #E3F2FD 0%, #BBDEFB 100%)', borderRadius: '12px', boxShadow: '0 2px 8px rgba(21, 101, 192, 0.15)' }}>
+                            <div style={{ fontWeight: '700', color: '#1565C0', marginBottom: '10px', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span style={{ fontSize: '1.1rem' }}>🔬</span> Breast Density (ACR BI-RADS)
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '0.85rem' }}>
+                              <div style={{ padding: '6px 8px', background: 'rgba(255,255,255,0.6)', borderRadius: '6px' }}><span style={{ color: '#666' }}>Category:</span> <strong style={{ color: '#1565C0' }}>Type {results.findings.comprehensive_analysis.breast_density.category}</strong></div>
+                              <div style={{ padding: '6px 8px', background: 'rgba(255,255,255,0.6)', borderRadius: '6px' }}><span style={{ color: '#666' }}>Density:</span> <strong style={{ color: '#1565C0' }}>{results.findings.comprehensive_analysis.breast_density.density_percentage}%</strong></div>
+                              <div style={{ padding: '6px 8px', background: 'rgba(255,255,255,0.6)', borderRadius: '6px' }}><span style={{ color: '#666' }}>Sensitivity:</span> <strong>{results.findings.comprehensive_analysis.breast_density.sensitivity}</strong></div>
+                              <div style={{ padding: '6px 8px', background: 'rgba(255,255,255,0.6)', borderRadius: '6px' }}><span style={{ color: '#666' }}>Masking Risk:</span> <strong>{results.findings.comprehensive_analysis.breast_density.masking_risk}</strong></div>
+                            </div>
+                            <div style={{ marginTop: '10px', fontSize: '0.8rem', color: '#1565C0', fontStyle: 'italic', padding: '6px 8px', background: 'rgba(255,255,255,0.4)', borderRadius: '6px' }}>{results.findings.comprehensive_analysis.breast_density.description}</div>
+                          </div>
+                        )}
+                        
+                        {/* Tissue Texture */}
+                        {results.findings.comprehensive_analysis.tissue_texture && (
+                          <div style={{ padding: '14px', background: 'linear-gradient(135deg, #F3E5F5 0%, #E1BEE7 100%)', borderRadius: '12px', boxShadow: '0 2px 8px rgba(123, 31, 162, 0.15)' }}>
+                            <div style={{ fontWeight: '700', color: '#7B1FA2', marginBottom: '10px', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span style={{ fontSize: '1.1rem' }}>🧬</span> Tissue Texture Analysis
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '0.85rem' }}>
+                              <div style={{ padding: '6px 8px', background: 'rgba(255,255,255,0.6)', borderRadius: '6px' }}><span style={{ color: '#666' }}>Pattern:</span> <strong style={{ color: '#7B1FA2' }}>{results.findings.comprehensive_analysis.tissue_texture.pattern}</strong></div>
+                              <div style={{ padding: '6px 8px', background: 'rgba(255,255,255,0.6)', borderRadius: '6px' }}><span style={{ color: '#666' }}>Uniformity:</span> <strong style={{ color: '#7B1FA2' }}>{results.findings.comprehensive_analysis.tissue_texture.uniformity_score}%</strong></div>
+                            </div>
+                            <div style={{ marginTop: '10px', fontSize: '0.8rem', color: '#7B1FA2', fontStyle: 'italic', padding: '6px 8px', background: 'rgba(255,255,255,0.4)', borderRadius: '6px' }}>{results.findings.comprehensive_analysis.tissue_texture.clinical_note}</div>
+                          </div>
+                        )}
+                      </div>
+                      
+                      {/* Row 2: Secondary Analysis - Symmetry, Skin & Nipple, Vascular */}
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '14px', marginBottom: '14px' }}>
+                        {/* Symmetry Analysis */}
+                        {results.findings.comprehensive_analysis.symmetry && (
+                          <div style={{ padding: '14px', background: 'linear-gradient(135deg, #E8F5E9 0%, #C8E6C9 100%)', borderRadius: '12px', boxShadow: '0 2px 8px rgba(46, 125, 50, 0.15)' }}>
+                            <div style={{ fontWeight: '700', color: '#2E7D32', marginBottom: '10px', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span style={{ fontSize: '1.1rem' }}>⚖️</span> Symmetry
+                            </div>
+                            <div style={{ display: 'grid', gap: '6px', fontSize: '0.85rem' }}>
+                              <div style={{ padding: '6px 8px', background: 'rgba(255,255,255,0.6)', borderRadius: '6px' }}><span style={{ color: '#666' }}>Assessment:</span> <strong style={{ color: '#2E7D32' }}>{results.findings.comprehensive_analysis.symmetry.assessment}</strong></div>
+                              <div style={{ padding: '6px 8px', background: 'rgba(255,255,255,0.6)', borderRadius: '6px' }}><span style={{ color: '#666' }}>Score:</span> <strong style={{ color: '#2E7D32' }}>{results.findings.comprehensive_analysis.symmetry.symmetry_score}%</strong></div>
+                            </div>
+                            <div style={{ marginTop: '8px', fontSize: '0.78rem', color: '#2E7D32', fontStyle: 'italic' }}>{results.findings.comprehensive_analysis.symmetry.clinical_significance}</div>
+                          </div>
+                        )}
+                        
+                        {/* Skin & Nipple */}
+                        {results.findings.comprehensive_analysis.skin_nipple && (
+                          <div style={{ padding: '14px', background: 'linear-gradient(135deg, #FFF3E0 0%, #FFE0B2 100%)', borderRadius: '12px', boxShadow: '0 2px 8px rgba(230, 81, 0, 0.15)' }}>
+                            <div style={{ fontWeight: '700', color: '#E65100', marginBottom: '10px', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span style={{ fontSize: '1.1rem' }}>👁️</span> Skin & Nipple
+                            </div>
+                            <div style={{ display: 'grid', gap: '6px', fontSize: '0.85rem' }}>
+                              <div style={{ padding: '6px 8px', background: 'rgba(255,255,255,0.6)', borderRadius: '6px' }}><span style={{ color: '#666' }}>Skin:</span> <strong style={{ color: '#E65100' }}>{results.findings.comprehensive_analysis.skin_nipple.skin_status}</strong></div>
+                              <div style={{ padding: '6px 8px', background: 'rgba(255,255,255,0.6)', borderRadius: '6px' }}><span style={{ color: '#666' }}>Concern:</span> <strong style={{ color: '#E65100' }}>{results.findings.comprehensive_analysis.skin_nipple.skin_concern_level}</strong></div>
+                              <div style={{ padding: '6px 8px', background: 'rgba(255,255,255,0.6)', borderRadius: '6px' }}><span style={{ color: '#666' }}>Nipple:</span> <strong>{results.findings.comprehensive_analysis.skin_nipple.nipple_retraction}</strong></div>
+                            </div>
+                          </div>
+                        )}
+                        
+                        {/* Vascular Patterns */}
+                        {results.findings.comprehensive_analysis.vascular_patterns && (
+                          <div style={{ padding: '14px', background: 'linear-gradient(135deg, #FCE4EC 0%, #F8BBD9 100%)', borderRadius: '12px', boxShadow: '0 2px 8px rgba(194, 24, 91, 0.15)' }}>
+                            <div style={{ fontWeight: '700', color: '#C2185B', marginBottom: '10px', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span style={{ fontSize: '1.1rem' }}>🩸</span> Vascular Pattern
+                            </div>
+                            <div style={{ display: 'grid', gap: '6px', fontSize: '0.85rem' }}>
+                              <div style={{ padding: '6px 8px', background: 'rgba(255,255,255,0.6)', borderRadius: '6px' }}><span style={{ color: '#666' }}>Pattern:</span> <strong style={{ color: '#C2185B' }}>{results.findings.comprehensive_analysis.vascular_patterns.pattern}</strong></div>
+                              <div style={{ padding: '6px 8px', background: 'rgba(255,255,255,0.6)', borderRadius: '6px' }}><span style={{ color: '#666' }}>Score:</span> <strong style={{ color: '#C2185B' }}>{results.findings.comprehensive_analysis.vascular_patterns.vascular_score}%</strong></div>
+                            </div>
+                            <div style={{ marginTop: '8px', fontSize: '0.78rem', color: '#C2185B', fontStyle: 'italic' }}>{results.findings.comprehensive_analysis.vascular_patterns.clinical_note}</div>
+                          </div>
+                        )}
+                      </div>
+                      
+                      {/* Row 3: Image Quality - Full Width */}
+                      {results.findings.comprehensive_analysis.image_quality && (
+                        <div style={{ padding: '14px', background: 'linear-gradient(135deg, #ECEFF1 0%, #CFD8DC 100%)', borderRadius: '12px', boxShadow: '0 2px 8px rgba(69, 90, 100, 0.15)', marginBottom: '14px' }}>
+                          <div style={{ fontWeight: '700', color: '#455A64', marginBottom: '10px', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span style={{ fontSize: '1.1rem' }}>📷</span> Image Quality Assessment
+                          </div>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', fontSize: '0.85rem' }}>
+                            <div style={{ padding: '10px 12px', background: 'rgba(255,255,255,0.7)', borderRadius: '8px', textAlign: 'center' }}>
+                              <div style={{ color: '#666', fontSize: '0.75rem', marginBottom: '4px' }}>Overall Quality</div>
+                              <strong style={{ color: '#455A64', fontSize: '1.1rem' }}>{results.findings.comprehensive_analysis.image_quality.overall_score}%</strong>
+                            </div>
+                            <div style={{ padding: '10px 12px', background: 'rgba(255,255,255,0.7)', borderRadius: '8px', textAlign: 'center' }}>
+                              <div style={{ color: '#666', fontSize: '0.75rem', marginBottom: '4px' }}>Positioning</div>
+                              <strong style={{ color: '#455A64', fontSize: '1rem' }}>{results.findings.comprehensive_analysis.image_quality.positioning}</strong>
+                            </div>
+                            <div style={{ padding: '10px 12px', background: 'rgba(255,255,255,0.7)', borderRadius: '8px', textAlign: 'center' }}>
+                              <div style={{ color: '#666', fontSize: '0.75rem', marginBottom: '4px' }}>Technical Adequacy</div>
+                              <strong style={{ color: '#455A64', fontSize: '1rem' }}>{results.findings.comprehensive_analysis.image_quality.technical_adequacy}</strong>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* Row 4: Calcification Analysis - Alert Style if detected */}
+                      {results.findings.comprehensive_analysis.calcification_analysis?.detected && (
+                        <div style={{ padding: '14px', background: 'linear-gradient(135deg, #FFEBEE 0%, #FFCDD2 100%)', borderRadius: '12px', border: '2px solid #EF5350', boxShadow: '0 2px 12px rgba(239, 83, 80, 0.25)' }}>
+                          <div style={{ fontWeight: '700', color: '#C62828', marginBottom: '12px', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span style={{ fontSize: '1.2rem' }}>⚠️</span> Calcification Analysis - Attention Required
+                          </div>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', fontSize: '0.85rem' }}>
+                            <div style={{ padding: '10px 12px', background: 'rgba(255,255,255,0.8)', borderRadius: '8px', textAlign: 'center' }}>
+                              <div style={{ color: '#666', fontSize: '0.75rem', marginBottom: '4px' }}>Count</div>
+                              <strong style={{ color: '#C62828', fontSize: '1.1rem' }}>{results.findings.comprehensive_analysis.calcification_analysis.count}</strong>
+                            </div>
+                            <div style={{ padding: '10px 12px', background: 'rgba(255,255,255,0.8)', borderRadius: '8px', textAlign: 'center' }}>
+                              <div style={{ color: '#666', fontSize: '0.75rem', marginBottom: '4px' }}>Distribution</div>
+                              <strong style={{ color: '#C62828', fontSize: '0.95rem' }}>{results.findings.comprehensive_analysis.calcification_analysis.distribution}</strong>
+                            </div>
+                            <div style={{ padding: '10px 12px', background: 'rgba(255,255,255,0.8)', borderRadius: '8px', textAlign: 'center' }}>
+                              <div style={{ color: '#666', fontSize: '0.75rem', marginBottom: '4px' }}>Morphology</div>
+                              <strong style={{ color: '#C62828', fontSize: '0.95rem' }}>{results.findings.comprehensive_analysis.calcification_analysis.morphology}</strong>
+                            </div>
+                            <div style={{ padding: '10px 12px', background: 'rgba(255,255,255,0.8)', borderRadius: '8px', textAlign: 'center' }}>
+                              <div style={{ color: '#666', fontSize: '0.75rem', marginBottom: '4px' }}>BI-RADS</div>
+                              <strong style={{ color: '#C62828', fontSize: '1.1rem' }}>{results.findings.comprehensive_analysis.calcification_analysis.birads_category}</strong>
+                            </div>
+                          </div>
+                          <div style={{ marginTop: '12px', fontSize: '0.85rem', color: '#C62828', fontWeight: '600', padding: '10px 12px', background: 'rgba(255,255,255,0.6)', borderRadius: '8px', borderLeft: '4px solid #C62828' }}>
+                            📋 {results.findings.comprehensive_analysis.calcification_analysis.recommendation}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {results.result?.toLowerCase().includes("malignant") ? (
                     <div>
                       {/* Detected Regions */}
                       {results.findings?.regions && results.findings.regions.length > 0 && (
                         <>
                           <p className="regions-header">
-                              Detected Regions ({results.findings.num_regions})
+                            Detected Regions ({results.findings.num_regions})
                           </p>
                           <div className="regions-grid">
                             {results.findings.regions.map((region, idx) => (
-                              <div key={idx} className="region-card">
+                              <div key={idx} className="region-card" style={{ marginBottom: '16px' }}>
                                 <div className="region-card-header">
-                                    Region {region.id}: {region.cancer_type || 'Abnormality'}
+                                  Region {region.id}: {region.cancer_type || 'Abnormality'}
+                                  {region.birads_region && (
+                                    <span style={{ marginLeft: '10px', padding: '2px 8px', background: '#E91E63', color: 'white', borderRadius: '4px', fontSize: '0.75rem' }}>
+                                      BI-RADS {region.birads_region}
+                                    </span>
+                                  )}
                                 </div>
                                 <div className="region-card-grid">
-                                  <div style={{gridColumn: '1 / -1', paddingBottom: '8px', borderBottom: '1px solid rgba(156, 43, 109, 0.15)'}}>
-                                    <span style={{fontSize: '0.75rem', color: '#8B5A8D'}}>Type:</span> 
-                                    <strong style={{fontSize: '0.95rem', color: '#9C2B6D'}}> {region.cancer_type || 'Unknown'}</strong>
+                                  <div style={{ gridColumn: '1 / -1', paddingBottom: '8px', borderBottom: '1px solid rgba(156, 43, 109, 0.15)' }}>
+                                    <span style={{ fontSize: '0.75rem', color: '#8B5A8D' }}>Type:</span>
+                                    <strong style={{ fontSize: '0.95rem', color: '#9C2B6D' }}> {region.cancer_type || 'Unknown'}</strong>
                                   </div>
                                   <div><span>Location:</span> <strong>{region.location?.quadrant || 'Unknown'}</strong></div>
-                                  <div><span>Confidence:</span> <strong>{region.confidence?.toFixed(1)}%</strong></div>
-                                  <div><span>Shape:</span> <strong>{region.shape || '—'}</strong></div>
-                                  <div><span>Pattern:</span> <strong>{region.characteristics?.pattern || '—'}</strong></div>
+                                  <div><span>Confidence:</span> <strong style={{ color: region.confidence > 70 ? '#DC2626' : '#059669' }}>{region.confidence?.toFixed(1)}%</strong></div>
+                                  
+                                  {/* Morphology Details */}
+                                  <div><span>Morphology:</span> <strong>{region.morphology?.shape || '—'}</strong></div>
+                                  <div><span>Margin:</span> <strong>{region.margin?.type || '—'}</strong></div>
+                                  <div><span>Margin Risk:</span> <strong style={{ color: region.margin?.risk_level === 'High' ? '#DC2626' : region.margin?.risk_level === 'Moderate' ? '#F59E0B' : '#059669' }}>{region.margin?.risk_level || '—'}</strong></div>
+                                  <div><span>Density:</span> <strong>{region.density?.level || '—'}</strong></div>
+                                  <div><span>Vascularity:</span> <strong>{region.vascularity?.assessment || '—'}</strong></div>
+                                  <div><span>Tissue:</span> <strong>{region.tissue_composition?.type || '—'}</strong></div>
+                                  
+                                  {/* Calcification details if present */}
+                                  {region.calcification_details && (
+                                    <>
+                                      <div><span>Calc. Type:</span> <strong>{region.calcification_details.morphology || '—'}</strong></div>
+                                      <div><span>Calc. Dist:</span> <strong>{region.calcification_details.distribution || '—'}</strong></div>
+                                    </>
+                                  )}
+                                  
                                   <div>
                                     <span>Severity:</span>{' '}
                                     <span className={`severity-badge ${region.severity || 'low'}`}>
@@ -756,12 +853,28 @@ function AppContent() {
                                   </div>
                                   <div><span>Area:</span> <strong>{region.size?.area_percentage?.toFixed(2)}%</strong></div>
                                 </div>
+                                
+                                {/* Clinical Significance */}
+                                {region.clinical_significance && (
+                                  <div style={{ marginTop: '10px', padding: '8px 12px', background: 'rgba(233, 30, 99, 0.08)', borderRadius: '8px', borderLeft: '3px solid #E91E63' }}>
+                                    <div style={{ fontSize: '0.75rem', color: '#8B5A8D', marginBottom: '4px' }}>Clinical Significance:</div>
+                                    <div style={{ fontSize: '0.85rem', color: '#333' }}>{region.clinical_significance}</div>
+                                  </div>
+                                )}
+                                
+                                {/* Recommended Action */}
+                                {region.recommended_action && (
+                                  <div style={{ marginTop: '8px', padding: '8px 12px', background: 'rgba(156, 43, 109, 0.08)', borderRadius: '8px', borderLeft: '3px solid #9C2B6D' }}>
+                                    <div style={{ fontSize: '0.75rem', color: '#8B5A8D', marginBottom: '4px' }}>Recommended Action:</div>
+                                    <div style={{ fontSize: '0.85rem', color: '#333', fontWeight: '600' }}>{region.recommended_action}</div>
+                                  </div>
+                                )}
                               </div>
                             ))}
                           </div>
                         </>
                       )}
-                      
+
                       <div className="urgent-box malignant">
                         <h5>⚕️ Recommended Action</h5>
                         <p>Based on these findings, consultation with an oncologist or breast specialist is strongly recommended.</p>
@@ -775,13 +888,13 @@ function AppContent() {
                     </div>
                   ) : (
                     <div>
-                      <div className="urgent-box" style={{background: 'linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)', border: '1px solid #bbf7d0'}}>
-                        <h5 style={{color: '#059669'}}>✓ Continue Preventive Care</h5>
+                      <div className="urgent-box" style={{ background: 'linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)', border: '1px solid #bbf7d0' }}>
+                        <h5 style={{ color: '#059669' }}>✓ Continue Preventive Care</h5>
                         <p>The analysis shows patterns consistent with healthy tissue. Continue regular screenings.</p>
-                        <ul className="checklist" style={{listStyle: 'none'}}>
-                          <li style={{color: '#059669'}}>Monthly self-breast examinations</li>
-                          <li style={{color: '#059669'}}>Age-appropriate mammogram schedules</li>
-                          <li style={{color: '#059669'}}>Report any new changes immediately</li>
+                        <ul className="checklist" style={{ listStyle: 'none' }}>
+                          <li style={{ color: '#059669' }}>Monthly self-breast examinations</li>
+                          <li style={{ color: '#059669' }}>Age-appropriate mammogram schedules</li>
+                          <li style={{ color: '#059669' }}>Report any new changes immediately</li>
                         </ul>
                       </div>
                     </div>
@@ -790,37 +903,193 @@ function AppContent() {
               </div>
             </section>
 
+            {/* Mammogram View Analysis Section */}
+            {results.view_analysis && (
+              <section className="section">
+                <p className="regions-header" style={{ textAlign: 'center' }}>
+                  Mammogram View Analysis
+                </p>
+                
+                <div style={{ 
+                  padding: '16px', 
+                  background: results.view_analysis.view_code?.includes('MLO') 
+                    ? 'linear-gradient(135deg, #EDE7F6 0%, #D1C4E9 100%)' 
+                    : 'linear-gradient(135deg, #E0F2F1 0%, #B2DFDB 100%)', 
+                  borderRadius: '12px', 
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.1)' 
+                }}>
+                  {/* View Type Header with View Code Badge */}
+                  <div style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: '12px', 
+                    marginBottom: '16px',
+                    padding: '10px 14px',
+                    background: 'rgba(255,255,255,0.7)',
+                    borderRadius: '8px'
+                  }}>
+                    {/* View Code Badge */}
+                    <div style={{
+                      padding: '8px 16px',
+                      borderRadius: '8px',
+                      background: results.view_analysis.view_code?.includes('MLO') 
+                        ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' 
+                        : 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)',
+                      color: 'white',
+                      fontWeight: '800',
+                      fontSize: '1.3rem',
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+                      minWidth: '70px',
+                      textAlign: 'center'
+                    }}>
+                      {results.view_analysis.view_code || 'N/A'}
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ 
+                        fontWeight: '700', 
+                        fontSize: '1.2rem', 
+                        color: results.view_analysis.view_code?.includes('MLO') ? '#5E35B1' : '#00796B'
+                      }}>
+                        {results.view_analysis.view_code} View
+                      </div>
+                      <div style={{ fontSize: '0.85rem', color: '#666', marginTop: '2px' }}>
+                        {results.view_analysis.view_code?.includes('MLO') 
+                          ? 'Medio-Lateral Oblique: Angled side view showing pectoral muscle and axilla' 
+                          : 'Cranio-Caudal: Top-to-bottom view for medial/lateral tissue assessment'}
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* View Analysis Grid - Only unique/view-specific information */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
+                    {/* Laterality */}
+                    <div style={{ padding: '12px', background: 'rgba(255,255,255,0.6)', borderRadius: '8px' }}>
+                      <div style={{ fontSize: '0.75rem', color: '#666', marginBottom: '4px' }}>Breast Side</div>
+                      <div style={{ fontWeight: '700', color: results.view_analysis.laterality === 'Right' ? '#1565C0' : '#C2185B', fontSize: '1rem' }}>
+                        {results.view_analysis.view_code || 'N/A'}
+                      </div>
+                    </div>
+                    
+                    {/* Image Quality */}
+                    <div style={{ padding: '12px', background: 'rgba(255,255,255,0.6)', borderRadius: '8px' }}>
+                      <div style={{ fontSize: '0.75rem', color: '#666', marginBottom: '4px' }}>Image Quality</div>
+                      <div style={{ fontWeight: '600', color: '#333' }}>{results.view_analysis.image_quality || 'N/A'}</div>
+                    </div>
+                    
+                    {/* Quality Score */}
+                    <div style={{ padding: '12px', background: 'rgba(255,255,255,0.6)', borderRadius: '8px' }}>
+                      <div style={{ fontSize: '0.75rem', color: '#666', marginBottom: '4px' }}>Quality Score</div>
+                      <div style={{ fontWeight: '700', fontSize: '1.2rem', color: results.view_analysis.quality_score >= 70 ? '#2E7D32' : '#F57C00' }}>
+                        {results.view_analysis.quality_score || 'N/A'}%
+                      </div>
+                    </div>
+                    
+                    {/* MLO-specific: Axillary Findings */}
+                    {results.view_analysis.view_code?.includes('MLO') && results.view_analysis.axillary_findings && (
+                      <div style={{ padding: '12px', background: 'rgba(255,255,255,0.6)', borderRadius: '8px' }}>
+                        <div style={{ fontSize: '0.75rem', color: '#666', marginBottom: '4px' }}>Axillary Findings</div>
+                        <div style={{ fontWeight: '600', color: '#333', fontSize: '0.85rem' }}>
+                          {results.view_analysis.axillary_findings}
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* MLO-specific: Pectoral Muscle */}
+                    {results.view_analysis.view_code?.includes('MLO') && results.view_analysis.pectoral_muscle_visibility && (
+                      <div style={{ padding: '12px', background: 'rgba(255,255,255,0.6)', borderRadius: '8px' }}>
+                        <div style={{ fontSize: '0.75rem', color: '#666', marginBottom: '4px' }}>Pectoral Muscle</div>
+                        <div style={{ fontWeight: '600', color: '#333', fontSize: '0.85rem' }}>
+                          {results.view_analysis.pectoral_muscle_visibility}
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* CC-specific: Asymmetry */}
+                    {results.view_analysis.view_code?.includes('CC') && results.view_analysis.asymmetry && (
+                      <div style={{ padding: '12px', background: 'rgba(255,255,255,0.6)', borderRadius: '8px' }}>
+                        <div style={{ fontSize: '0.75rem', color: '#666', marginBottom: '4px' }}>Asymmetry</div>
+                        <div style={{ fontWeight: '600', color: '#333', fontSize: '0.85rem' }}>
+                          {results.view_analysis.asymmetry}
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* CC-specific: Skin/Nipple Changes */}
+                    {results.view_analysis.view_code?.includes('CC') && results.view_analysis.skin_nipple_changes && (
+                      <div style={{ padding: '12px', background: 'rgba(255,255,255,0.6)', borderRadius: '8px' }}>
+                        <div style={{ fontSize: '0.75rem', color: '#666', marginBottom: '4px' }}>Skin & Nipple</div>
+                        <div style={{ fontWeight: '600', color: '#333', fontSize: '0.85rem' }}>
+                          {results.view_analysis.skin_nipple_changes}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  
+                  {/* Impression */}
+                  <div style={{ 
+                    marginTop: '14px', 
+                    padding: '12px 14px', 
+                    background: results.view_analysis.suspicion_level === 'High' 
+                      ? 'rgba(198, 40, 40, 0.1)' 
+                      : results.view_analysis.suspicion_level === 'Intermediate'
+                        ? 'rgba(245, 124, 0, 0.1)'
+                        : 'rgba(46, 125, 50, 0.1)',
+                    borderRadius: '8px',
+                    borderLeft: `4px solid ${
+                      results.view_analysis.suspicion_level === 'High' 
+                        ? '#C62828' 
+                        : results.view_analysis.suspicion_level === 'Intermediate'
+                          ? '#F57C00'
+                          : '#2E7D32'
+                    }`
+                  }}>
+                    <div style={{ fontSize: '0.75rem', color: '#666', marginBottom: '4px' }}>Impression</div>
+                    <div style={{ 
+                      fontWeight: '600', 
+                      color: results.view_analysis.suspicion_level === 'High' 
+                        ? '#C62828' 
+                        : results.view_analysis.suspicion_level === 'Intermediate'
+                          ? '#F57C00'
+                          : '#2E7D32'
+                    }}>
+                      {results.view_analysis.impression || 'Analysis complete'}
+                    </div>
+                    <div style={{ fontSize: '0.8rem', color: '#666', marginTop: '6px' }}>
+                      Suspicion Level: <strong>{results.view_analysis.suspicion_level || 'N/A'}</strong> | 
+                      Confidence: <strong>{results.view_analysis.confidence_score || 'N/A'}</strong>
+                    </div>
+                  </div>
+                </div>
+              </section>
+            )}
+
             <section className="section">
               <h3 className="section-title">Report Details</h3>
               <div className="details-tabs">
                 <button
-                  className={`details-tab ${
-                    detailsTab === "clinical" ? "active" : ""
-                  }`}
+                  className={`details-tab ${detailsTab === "clinical" ? "active" : ""
+                    }`}
                   onClick={() => setDetailsTab("clinical")}
                 >
                   Clinical Context
                 </button>
                 <button
-                  className={`details-tab ${
-                    detailsTab === "nextSteps" ? "active" : ""
-                  }`}
+                  className={`details-tab ${detailsTab === "nextSteps" ? "active" : ""
+                    }`}
                   onClick={() => setDetailsTab("nextSteps")}
                 >
                   Next Steps
                 </button>
                 <button
-                  className={`details-tab ${
-                    detailsTab === "risk" ? "active" : ""
-                  }`}
+                  className={`details-tab ${detailsTab === "risk" ? "active" : ""
+                    }`}
                   onClick={() => setDetailsTab("risk")}
                 >
                   Risk Guide
                 </button>
                 <button
-                  className={`details-tab ${
-                    detailsTab === "heatmapInfo" ? "active" : ""
-                  }`}
+                  className={`details-tab ${detailsTab === "heatmapInfo" ? "active" : ""
+                    }`}
                   onClick={() => setDetailsTab("heatmapInfo")}
                 >
                   Heatmap Tips
@@ -840,7 +1109,7 @@ function AppContent() {
                     </ul>
                     <div style={{ marginTop: '16px', padding: '12px', background: 'rgba(255, 200, 220, 0.15)', borderRadius: '8px' }}>
                       <p style={{ fontSize: '1.1rem', margin: 0 }}>
-                        <strong>Note:</strong> Risk levels are based on AI model confidence. They should be confirmed with 
+                        <strong>Note:</strong> Risk levels are based on AI model confidence. They should be confirmed with
                         clinical examination, additional imaging (mammography, ultrasound, MRI), and if necessary, tissue biopsy.
                       </p>
                     </div>
@@ -850,39 +1119,39 @@ function AppContent() {
                   <div>
                     <h4 className="details-heading">Understanding Grad-CAM Heatmaps</h4>
                     <p style={{ marginBottom: '16px', lineHeight: '1.8' }}>
-                      Grad-CAM (Gradient-weighted Class Activation Mapping) is an AI visualization technique that shows 
-                      which parts of the image most influenced the model's decision. Think of it as the AI "highlighting" 
+                      Grad-CAM (Gradient-weighted Class Activation Mapping) is an AI visualization technique that shows
+                      which parts of the image most influenced the model's decision. Think of it as the AI "highlighting"
                       areas it found most important.
                     </p>
-                    
+
                     <h4 className="details-heading" style={{ marginTop: '20px' }}>Color Meanings</h4>
                     <ul className="details-list">
-                      <li><strong style={{ color: '#DC2626' }}>Red/Orange:</strong> Highest attention areas. The model 
-                      found these regions most significant for its prediction. In malignant cases, these often indicate 
-                      suspicious tissue patterns.</li>
-                      <li><strong style={{ color: '#F59E0B' }}>Yellow:</strong> Moderate attention. Areas of interest 
-                      but less critical than red zones.</li>
-                      <li><strong style={{ color: '#10B981' }}>Green:</strong> Low to moderate attention. Normal or 
-                      less concerning tissue patterns.</li>
-                      <li><strong style={{ color: '#3B82F6' }}>Blue:</strong> Minimal attention. Areas that had little 
-                      impact on the final prediction.</li>
+                      <li><strong style={{ color: '#DC2626' }}>Red/Orange:</strong> Highest attention areas. The model
+                        found these regions most significant for its prediction. In malignant cases, these often indicate
+                        suspicious tissue patterns.</li>
+                      <li><strong style={{ color: '#F59E0B' }}>Yellow:</strong> Moderate attention. Areas of interest
+                        but less critical than red zones.</li>
+                      <li><strong style={{ color: '#10B981' }}>Green:</strong> Low to moderate attention. Normal or
+                        less concerning tissue patterns.</li>
+                      <li><strong style={{ color: '#3B82F6' }}>Blue:</strong> Minimal attention. Areas that had little
+                        impact on the final prediction.</li>
                     </ul>
-                    
+
                     <h4 className="details-heading" style={{ marginTop: '20px' }}>Viewing Modes Explained</h4>
                     <ul className="details-list">
-                      <li><strong>Heatmap Overlay:</strong> Best for understanding suspicious areas in anatomical context. 
-                      The original image is shown with colored heatmap overlaid.</li>
-                      <li><strong>Heatmap Only:</strong> Pure activation visualization without the original image. 
-                      Useful for seeing the exact intensity distribution.</li>
-                      <li><strong>Region Detection (BBox):</strong> Shows detected regions of interest with bounding boxes. 
-                      Highlights specific areas the model identified.</li>
+                      <li><strong>Heatmap Overlay:</strong> Best for understanding suspicious areas in anatomical context.
+                        The original image is shown with colored heatmap overlaid.</li>
+                      <li><strong>Heatmap Only:</strong> Pure activation visualization without the original image.
+                        Useful for seeing the exact intensity distribution.</li>
+                      <li><strong>Region Detection (BBox):</strong> Shows detected regions of interest with bounding boxes.
+                        Highlights specific areas the model identified.</li>
                       <li><strong>Type of Cancer detection:</strong> Unprocessed scan for reference and comparison.</li>
                     </ul>
-                    
+
                     <div style={{ marginTop: '16px', padding: '12px', background: 'rgba(255, 200, 220, 0.15)', borderRadius: '8px' }}>
                       <p style={{ fontSize: '1.1rem', margin: 0 }}>
-                        <strong>Important:</strong> Heatmaps show AI attention, not confirmed disease. Red areas don't 
-                        automatically mean cancer, and blue areas don't guarantee health. Medical professionals use multiple 
+                        <strong>Important:</strong> Heatmaps show AI attention, not confirmed disease. Red areas don't
+                        automatically mean cancer, and blue areas don't guarantee health. Medical professionals use multiple
                         diagnostic tools for accurate assessment.
                       </p>
                     </div>
@@ -935,7 +1204,7 @@ function AppContent() {
                         </tbody>
                       </table>
                     </div>
-                    
+
                     {/* Detected Regions Table */}
                     {results.findings?.regions && results.findings.regions.length > 0 && (
                       <>
@@ -960,9 +1229,9 @@ function AppContent() {
                                   <td style={{ padding: '12px 14px', borderBottom: idx === results.findings.regions.length - 1 ? 'none' : '1px solid rgba(156, 43, 109, 0.1)', color: '#555' }}>{region.location?.quadrant || 'N/A'}</td>
                                   <td style={{ padding: '14px 16px', borderBottom: idx === results.findings.regions.length - 1 ? 'none' : '1px solid rgba(156, 43, 109, 0.1)', fontWeight: '700', color: region.confidence > 70 ? '#DC2626' : region.confidence > 50 ? '#F59E0B' : '#059669', fontSize: '1.1rem' }}>{region.confidence?.toFixed(1)}%</td>
                                   <td style={{ padding: '12px 14px', borderBottom: idx === results.findings.regions.length - 1 ? 'none' : '1px solid rgba(156, 43, 109, 0.1)' }}>
-                                    <span style={{ 
-                                      padding: '4px 10px', 
-                                      borderRadius: '14px', 
+                                    <span style={{
+                                      padding: '4px 10px',
+                                      borderRadius: '14px',
                                       fontSize: '0.95rem',
                                       fontWeight: '600',
                                       background: region.severity === 'high' ? 'rgba(220, 38, 38, 0.12)' : region.severity === 'medium' ? 'rgba(245, 158, 11, 0.12)' : 'rgba(16, 185, 129, 0.12)',
@@ -980,7 +1249,7 @@ function AppContent() {
                         </div>
                       </>
                     )}
-                    
+
                     {/* No Regions Detected */}
                     {(!results.findings?.regions || results.findings.regions.length === 0) && (
                       <div style={{ padding: '20px', background: 'linear-gradient(135deg, #e5fff5 0%, #f5fffa 100%)', borderRadius: '16px', marginTop: '25px', border: '2px solid #c9ffe5', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
@@ -989,13 +1258,13 @@ function AppContent() {
                         </p>
                       </div>
                     )}
-                    
+
                   </div>
                 )}
                 {detailsTab === "nextSteps" && (
                   <div>
                     <h4 className="details-heading">What To Do After Your Results</h4>
-                    
+
                     {results.result?.toLowerCase().includes("malignant") ? (
                       <div>
                         <div style={{ padding: '14px', background: 'rgba(220, 38, 38, 0.08)', borderRadius: '10px', marginBottom: '16px', borderLeft: '4px solid #DC2626' }}>
@@ -1003,7 +1272,7 @@ function AppContent() {
                             ⚠️ High-Priority Action Required
                           </p>
                         </div>
-                        
+
                         <h4 className="details-heading" style={{ marginTop: '20px' }}>Immediate Steps (Within 1-2 Days)</h4>
                         <ul className="details-list">
                           <li><strong>Contact Your Primary Care Doctor:</strong> Schedule an urgent appointment to discuss these findings.</li>
@@ -1011,7 +1280,7 @@ function AppContent() {
                           <li><strong>Gather Medical History:</strong> Compile your family history of breast cancer and previous mammogram results.</li>
                           <li><strong>Don't Panic:</strong> Remember this is a screening tool. Confirmation requires professional diagnosis.</li>
                         </ul>
-                        
+
                         <h4 className="details-heading" style={{ marginTop: '20px' }}>Follow-Up Diagnostic Tests</h4>
                         <ul className="details-list">
                           <li><strong>Diagnostic Mammogram:</strong> More detailed imaging of suspicious areas</li>
@@ -1019,7 +1288,7 @@ function AppContent() {
                           <li><strong>MRI (if recommended):</strong> Provides detailed breast tissue images</li>
                           <li><strong>Biopsy:</strong> The only way to definitively diagnose cancer (if abnormalities confirmed)</li>
                         </ul>
-                        
+
                         <h4 className="details-heading" style={{ marginTop: '20px' }}>Questions to Ask Your Doctor</h4>
                         <ul className="details-list">
                           <li>What additional tests do you recommend?</li>
@@ -1036,7 +1305,7 @@ function AppContent() {
                             ✓ Positive Results - Continue Preventive Care
                           </p>
                         </div>
-                        
+
                         <h4 className="details-heading" style={{ marginTop: '20px' }}>Recommended Actions</h4>
                         <ul className="details-list">
                           <li><strong>Continue Regular Screenings:</strong> Follow age-appropriate screening guidelines (annual or biennial mammograms).</li>
@@ -1044,7 +1313,7 @@ function AppContent() {
                           <li><strong>Share Results with Doctor:</strong> Discuss these findings at your next routine check-up.</li>
                           <li><strong>Stay Vigilant:</strong> Report any new lumps, changes in breast appearance, or symptoms to your doctor.</li>
                         </ul>
-                        
+
                         <h4 className="details-heading" style={{ marginTop: '20px' }}>Preventive Health Measures</h4>
                         <ul className="details-list">
                           <li><strong>Maintain Healthy Weight:</strong> Obesity increases breast cancer risk</li>
@@ -1053,7 +1322,7 @@ function AppContent() {
                           <li><strong>Healthy Diet:</strong> Focus on fruits, vegetables, whole grains</li>
                           <li><strong>Know Your Family History:</strong> Inform your doctor if there's a family history of breast cancer</li>
                         </ul>
-                        
+
                         <h4 className="details-heading" style={{ marginTop: '20px' }}>When to Seek Immediate Medical Attention</h4>
                         <ul className="details-list">
                           <li>New lump or thickening in breast or underarm</li>
@@ -1064,10 +1333,10 @@ function AppContent() {
                         </ul>
                       </div>
                     )}
-                    
+
                     <div style={{ marginTop: '20px', padding: '14px', background: 'rgba(192, 37, 108, 0.08)', borderRadius: '10px' }}>
                       <p style={{ margin: 0, fontSize: '1.15rem', lineHeight: '1.8' }}>
-                        <strong>Remember:</strong> This AI analysis is a supplementary screening tool. All findings should be 
+                        <strong>Remember:</strong> This AI analysis is a supplementary screening tool. All findings should be
                         reviewed and confirmed by qualified healthcare professionals. When in doubt, always consult your doctor.
                       </p>
                     </div>

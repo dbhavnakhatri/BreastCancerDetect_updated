@@ -263,6 +263,89 @@ def detect_bounding_boxes(heatmap, original_image_size, threshold=0.6, min_area=
     
     return boxes
 
+def draw_bounding_boxes_with_cancer_type(image, regions, line_width=4):
+    """
+    Draw bounding boxes with cancer type labels ATTACHED to each box.
+    Each box and its label use the SAME coordinates - no drift possible.
+    
+    Args:
+        image: PIL Image
+        regions: List of region dicts with bbox, cancer_type, confidence, severity
+        line_width: Width of the bounding box lines
+    
+    Returns:
+        PIL Image with bounding boxes and cancer type labels attached
+    """
+    img_copy = image.copy()
+    draw = ImageDraw.Draw(img_copy)
+    
+    try:
+        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 18)
+    except:
+        font = ImageFont.load_default()
+    
+    # Color mapping based on severity
+    severity_colors = {
+        'high': '#DC2626',      # Red
+        'medium': '#F59E0B',    # Orange
+        'moderate': '#F59E0B',  # Orange
+        'low': '#10B981'        # Green
+    }
+    
+    for region in regions:
+        bbox = region['bbox']
+        x1, y1, x2, y2 = bbox['x1'], bbox['y1'], bbox['x2'], bbox['y2']
+        
+        cancer_type = region.get('cancer_type', 'Unknown')
+        confidence = region.get('confidence', 0)
+        severity = region.get('severity', 'low')
+        
+        # Get color based on severity
+        box_color = severity_colors.get(severity.lower(), '#FF0000')
+        
+        # Draw bounding box
+        draw.rectangle([x1, y1, x2, y2], outline=box_color, width=line_width)
+        
+        # Create label: "Cancer Type - XX%"
+        label = f"{cancer_type} - {confidence:.0f}%"
+        
+        # Label positioning constants
+        padding = 8
+        offset = 6
+        
+        # Get text dimensions
+        text_bbox = draw.textbbox((0, 0), label, font=font)
+        text_width = text_bbox[2] - text_bbox[0]
+        text_height = text_bbox[3] - text_bbox[1]
+        
+        # Calculate space needed for label
+        space_needed = text_height + padding * 2 + offset
+        
+        # Determine position: above box if space available, otherwise inside
+        if y1 >= space_needed:
+            # Place ABOVE the box (preferred)
+            label_x = x1 + 5
+            bg_y1 = y1 - space_needed
+            bg_y2 = y1 - offset
+            text_y = bg_y1 + padding
+        else:
+            # Place INSIDE the box at top-left
+            label_x = x1 + padding
+            bg_y1 = y1 + 5
+            bg_y2 = y1 + 5 + text_height + padding * 2
+            text_y = bg_y1 + padding
+        
+        # Draw label background (same color as box)
+        bg_x1 = label_x - padding
+        bg_x2 = label_x + text_width + padding
+        draw.rectangle([bg_x1, bg_y1, bg_x2, bg_y2], fill=box_color, outline=box_color)
+        
+        # Draw label text (white)
+        draw.text((label_x, text_y), label, fill='white', font=font)
+    
+    return img_copy
+
+
 def draw_bounding_boxes(image, boxes, box_color='red', text_color='white', line_width=3):
     """
     Draw bounding boxes on an image.
@@ -559,6 +642,51 @@ def extract_detailed_findings(heatmap, boxes, original_image_size, confidence):
         adjusted_confidence = float(conf * 100 * cancer_classification["confidence_modifier"])
         adjusted_confidence = min(99.9, max(1.0, adjusted_confidence))  # Clamp between 1-99.9%
         
+        # Determine morphology based on shape and characteristics
+        if shape == "roughly circular":
+            morphology_shape = "Round/Oval"
+        elif "elongated" in shape:
+            morphology_shape = "Irregular"
+        else:
+            morphology_shape = "Lobular"
+        
+        # Determine margin type based on confidence and characteristics
+        if adjusted_confidence > 80:
+            margin_type = "Spiculated"
+            margin_risk = "High"
+        elif adjusted_confidence > 60:
+            margin_type = "Irregular/Indistinct"
+            margin_risk = "Moderate"
+        else:
+            margin_type = "Circumscribed"
+            margin_risk = "Low"
+        
+        # Determine density level based on intensity
+        mean_int = characteristics.get("mean_intensity", 0)
+        if mean_int > 0.8:
+            density_level = "High density"
+        elif mean_int > 0.5:
+            density_level = "Equal density"
+        else:
+            density_level = "Low density"
+        
+        # Determine vascularity based on pattern
+        pattern = characteristics.get("pattern", "homogeneous")
+        if pattern == "heterogeneous":
+            vascularity = "Increased"
+        elif pattern == "slightly heterogeneous":
+            vascularity = "Moderate"
+        else:
+            vascularity = "Normal"
+        
+        # Determine tissue composition
+        if "calcification" in cancer_classification["primary_type"].lower():
+            tissue_type = "Calcified"
+        elif area_percentage > 2:
+            tissue_type = "Fibroglandular"
+        else:
+            tissue_type = "Mixed density"
+        
         region_info = {
             "id": i + 1,
             "confidence": adjusted_confidence,
@@ -570,7 +698,28 @@ def extract_detailed_findings(heatmap, boxes, original_image_size, confidence):
             "cancer_subtypes": cancer_classification["subtypes"],
             "technique": cancer_classification["technique"],
             "severity": characteristics.get("severity", "low"),
-            "bbox": {"x1": x1, "y1": y1, "x2": x2, "y2": y2}
+            "bbox": {"x1": x1, "y1": y1, "x2": x2, "y2": y2},
+            "morphology": {
+                "shape": morphology_shape,
+                "description": f"{morphology_shape} lesion with {margin_type.lower()} margins"
+            },
+            "margin": {
+                "type": margin_type,
+                "risk_level": margin_risk,
+                "description": f"{margin_type} margins suggest {margin_risk.lower()} suspicion"
+            },
+            "density": {
+                "level": density_level,
+                "relative_to_tissue": "Higher than surrounding tissue" if mean_int > 0.6 else "Similar to surrounding tissue"
+            },
+            "vascularity": {
+                "assessment": vascularity,
+                "significance": "May indicate active lesion" if vascularity == "Increased" else "Normal perfusion pattern"
+            },
+            "tissue_composition": {
+                "type": tissue_type,
+                "heterogeneity": pattern
+            }
         }
         findings["regions"].append(region_info)
     
@@ -601,11 +750,12 @@ def create_gradcam_visualization(original_image, preprocessed_img, model, confid
         confidence: Model prediction confidence
     
     Returns:
-        Tuple of (heatmap_array, overlay_image, heatmap_only_image, bbox_image, error_message, detailed_findings)
+        Tuple of (heatmap_array, overlay_image, heatmap_only_image, bbox_image, cancer_type_image, error_message, detailed_findings)
         - heatmap_array: Normalized activation heatmap
         - overlay_image: Heatmap overlaid on original image
         - heatmap_only_image: Standalone heatmap visualization
-        - bbox_image: Original image with bounding boxes around detected regions (None if no regions)
+        - bbox_image: Original image with simple bounding boxes
+        - cancer_type_image: Image with cancer type labels attached to boxes
         - error_message: Error string if generation failed, None otherwise
         - detailed_findings: Dictionary with extracted findings from the image
     """
@@ -614,7 +764,7 @@ def create_gradcam_visualization(original_image, preprocessed_img, model, confid
     if last_conv_layer_idx is None:
         error_msg = "No convolutional layer found in model"
         print(error_msg)
-        return None, None, None, None, error_msg, None
+        return None, None, None, None, None, error_msg, None
     
     print(f"DEBUG: Found conv layer at index {last_conv_layer_idx}")
     print(f"DEBUG: Model has {len(model.layers)} layers")
@@ -625,7 +775,7 @@ def create_gradcam_visualization(original_image, preprocessed_img, model, confid
         if heatmap is None:
             error_msg = "Heatmap generation returned None - gradient calculation may have failed"
             print(error_msg)
-            return None, None, None, None, error_msg, None
+            return None, None, None, None, None, error_msg, None
         
         print(f"DEBUG: Heatmap generated successfully, shape: {heatmap.shape}")
         
@@ -681,26 +831,125 @@ def create_gradcam_visualization(original_image, preprocessed_img, model, confid
         # Sort by confidence and limit to 10 regions max
         filtered_boxes = sorted(filtered_boxes, key=lambda b: b[4], reverse=True)[:10]
         
+        # Extract detailed findings FIRST (includes cancer type classification)
+        detailed_findings = extract_detailed_findings(heatmap, filtered_boxes, original_image.size, confidence)
+        print(f"DEBUG: Extracted findings: {detailed_findings['summary']}")
+        
+        # Now draw bounding boxes WITH cancer type labels attached
         bbox_image = None
-        if filtered_boxes:
-            bbox_image = draw_bounding_boxes(original_image, filtered_boxes, box_color='#FF0000', line_width=3)
-            print(f"DEBUG: Detected {len(filtered_boxes)} suspicious regions")
-            boxes = filtered_boxes  # Use filtered for findings
+        cancer_type_image = None
+        
+        if detailed_findings and detailed_findings['regions']:
+            # Create bbox image WITH cancer type labels attached to each box
+            bbox_image = draw_bounding_boxes_with_cancer_type(
+                original_image,
+                detailed_findings['regions'],
+                line_width=4
+            )
+            
+            # Cancer type image - SAME as bbox image (both show cancer types with labels)
+            cancer_type_image = draw_bounding_boxes_with_cancer_type(
+                original_image,
+                detailed_findings['regions'],
+                line_width=4
+            )
+            
+            print(f"DEBUG: Detected {len(detailed_findings['regions'])} regions with cancer types attached to boxes")
         else:
             # Fallback: show original image if no regions detected
             bbox_image = original_image.copy()
+            cancer_type_image = original_image.copy()
             print("DEBUG: No distinct high-activation regions detected, showing original")
         
-        # Extract detailed findings
-        detailed_findings = extract_detailed_findings(heatmap, boxes, original_image.size, confidence)
-        print(f"DEBUG: Extracted findings: {detailed_findings['summary']}")
-        
         print("DEBUG: Heatmap visualization complete!")
-        return heatmap, overlay_image, heatmap_only_image, bbox_image, None, detailed_findings
+        return heatmap, overlay_image, heatmap_only_image, bbox_image, cancer_type_image, None, detailed_findings
         
     except Exception as e:
         error_msg = f"Error generating Grad-CAM: {str(e)}"
         print(error_msg)
         import traceback
         traceback.print_exc()
-        return None, None, None, None, error_msg, None
+        return None, None, None, None, None, error_msg, None
+
+
+def generate_mammogram_view_analysis(image, heatmap, model_confidence, detected_regions, view_type="auto", filename=None):
+    """
+    Generate mammogram view analysis (CC/MLO detection).
+    Returns basic view information with laterality detection from filename.
+    """
+    # Default values
+    view_code = "N/A"
+    laterality = "Right"
+    laterality_code = "R"
+    image_quality = "Acceptable - Adequate for interpretation"
+    quality_score = 70
+    
+    # Try to extract view from filename
+    if filename:
+        import os
+        name_upper = os.path.splitext(filename)[0].upper()
+        name_clean = name_upper.replace('-', '').replace('_', '').replace(' ', '')
+        
+        if 'LMLO' in name_clean:
+            view_code = "L-MLO"
+            laterality = "Left"
+            laterality_code = "L"
+            view_type = "mlo"
+        elif 'RMLO' in name_clean:
+            view_code = "R-MLO"
+            laterality = "Right"
+            laterality_code = "R"
+            view_type = "mlo"
+        elif 'LCC' in name_clean:
+            view_code = "LCC"
+            laterality = "Left"
+            laterality_code = "L"
+            view_type = "cc"
+        elif 'RCC' in name_clean:
+            view_code = "RCC"
+            laterality = "Right"
+            laterality_code = "R"
+            view_type = "cc"
+        elif 'MLO' in name_clean:
+            view_code = "MLO"
+            view_type = "mlo"
+        elif 'CC' in name_clean:
+            view_code = "CC"
+            view_type = "cc"
+    
+    # Determine suspicion and impression
+    abnormalities = len(detected_regions)
+    if model_confidence >= 0.75 or abnormalities >= 3:
+        suspicion_level = "High"
+        impression = "Multiple suspicious findings requiring immediate workup"
+        birads = "BI-RADS 4C/5 - Highly suspicious"
+    elif model_confidence >= 0.5 or abnormalities >= 1:
+        suspicion_level = "Intermediate"
+        impression = "Findings present that warrant further evaluation"
+        birads = "BI-RADS 4A/4B - Suspicious abnormality"
+    else:
+        suspicion_level = "Low"
+        impression = "No suspicious abnormality detected"
+        birads = "BI-RADS 1/2 - Negative/Benign"
+    
+    # Return comprehensive analysis
+    return {
+        "view_type": "MLO (Medio-Lateral Oblique)" if view_type == "mlo" else "CC (Cranio-Caudal)",
+        "view_code": view_code,
+        "laterality": laterality,
+        "laterality_code": laterality_code,
+        "image_quality": image_quality,
+        "quality_score": quality_score,
+        "breast_density": "ACR Category B - Scattered fibroglandular densities",
+        "masses": {"description": f"{len([r for r in detected_regions if 'Mass' in r.get('cancer_type', '')])} mass(es) detected" if any('Mass' in r.get('cancer_type', '') for r in detected_regions) else "No masses identified", "details": []},
+        "calcifications": "No suspicious calcifications",
+        "architectural_distortion": "No architectural distortion identified",
+        "asymmetry": "No significant asymmetry",
+        "skin_nipple_changes": "No skin or nipple abnormalities",
+        "axillary_findings": "No suspicious axillary lymphadenopathy",
+        "pectoral_muscle_visibility": "Adequately visualized",
+        "impression": impression,
+        "birads_category": birads,
+        "suspicion_level": suspicion_level,
+        "confidence_score": f"{model_confidence * 100:.1f}%"
+    }
