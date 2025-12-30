@@ -114,6 +114,55 @@ class YOLOCancerDetector:
                 center_y = (y1 + y2) / 2
                 location = self._get_location(center_x, center_y, img_array.shape[1], img_array.shape[0])
                 
+                # Determine BI-RADS category for this detection
+                conf_pct = confidence * 100
+                birads_region = "2"  # Default: Benign
+                
+                if conf_pct >= 90 or (severity == "high" and area_percentage > 3.0):
+                    birads_region = "5"  # Highly suggestive of malignancy
+                elif conf_pct >= 75 or (severity == "high" and area_percentage > 1.5):
+                    birads_region = "4C"  # High suspicion
+                elif conf_pct >= 60 or severity == "medium":
+                    birads_region = "4B"  # Intermediate suspicion
+                elif conf_pct >= 45:
+                    birads_region = "4A"  # Low suspicion
+                elif conf_pct >= 30 or severity == "low":
+                    birads_region = "3"  # Probably benign
+                
+                # Determine Clinical Significance based on BI-RADS
+                if birads_region == "5":
+                    clinical_significance = "Highly suspicious for malignancy - immediate intervention required"
+                elif birads_region == "4C":
+                    clinical_significance = "High suspicion for malignancy - strong recommendation for biopsy"
+                elif birads_region == "4B":
+                    clinical_significance = "Intermediate suspicion - malignancy possible, tissue diagnosis indicated"
+                elif birads_region == "4A":
+                    clinical_significance = "Low suspicion for malignancy - biopsy should be considered"
+                elif birads_region == "3":
+                    clinical_significance = "Probably benign finding - short interval follow-up suggested"
+                else:
+                    clinical_significance = "Benign finding - routine screening recommended"
+                
+                # Determine Recommended Action based on BI-RADS and characteristics
+                if birads_region == "5":
+                    recommended_action = "Urgent biopsy (core needle or surgical) and oncology referral"
+                elif birads_region == "4C":
+                    recommended_action = "Tissue diagnosis via core needle biopsy within 1-2 weeks"
+                elif birads_region == "4B":
+                    if area_percentage > 2:
+                        recommended_action = "Core needle biopsy recommended - larger lesion requires sampling"
+                    else:
+                        recommended_action = "Core needle biopsy or short-interval (3-6 month) follow-up"
+                elif birads_region == "4A":
+                    if "calcification" in cancer_type.lower():
+                        recommended_action = "Consider stereotactic biopsy for calcifications"
+                    else:
+                        recommended_action = "Biopsy consideration or 6-month short-interval follow-up"
+                elif birads_region == "3":
+                    recommended_action = "Short-interval follow-up mammogram in 6 months"
+                else:
+                    recommended_action = "Continue routine annual screening"
+                
                 detection = {
                     "id": i + 1,
                     "cancer_type": cancer_type,
@@ -131,6 +180,9 @@ class YOLOCancerDetector:
                         "area_percentage": round(area_percentage, 2)
                     },
                     "severity": severity,
+                    "birads_region": birads_region,
+                    "clinical_significance": clinical_significance,
+                    "recommended_action": recommended_action,
                     "location": location,
                     "technique": "YOLOv8"
                 }

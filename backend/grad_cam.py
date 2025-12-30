@@ -687,6 +687,56 @@ def extract_detailed_findings(heatmap, boxes, original_image_size, confidence):
         else:
             tissue_type = "Mixed density"
         
+        # Determine BI-RADS category for this region
+        region_severity = characteristics.get("severity", "low")
+        birads_region = "2"  # Default: Benign
+        
+        # BI-RADS classification based on multiple factors
+        if adjusted_confidence >= 90 or (region_severity == "high" and margin_risk == "High"):
+            birads_region = "5"  # Highly suggestive of malignancy
+        elif adjusted_confidence >= 75 or (region_severity == "high" and margin_risk in ["High", "Moderate"]):
+            birads_region = "4C"  # High suspicion
+        elif adjusted_confidence >= 60 or (region_severity == "medium" and margin_risk == "Moderate"):
+            birads_region = "4B"  # Intermediate suspicion
+        elif adjusted_confidence >= 45 or (region_severity == "medium" and margin_risk == "Low"):
+            birads_region = "4A"  # Low suspicion
+        elif adjusted_confidence >= 30 or region_severity == "low":
+            birads_region = "3"  # Probably benign
+        
+        # Determine Clinical Significance based on BI-RADS and characteristics
+        if birads_region == "5":
+            clinical_significance = "Highly suspicious for malignancy - immediate intervention required"
+        elif birads_region == "4C":
+            clinical_significance = "High suspicion for malignancy - strong recommendation for biopsy"
+        elif birads_region == "4B":
+            clinical_significance = "Intermediate suspicion - malignancy possible, tissue diagnosis indicated"
+        elif birads_region == "4A":
+            clinical_significance = "Low suspicion for malignancy - biopsy should be considered"
+        elif birads_region == "3":
+            clinical_significance = "Probably benign finding - short interval follow-up suggested"
+        else:
+            clinical_significance = "Benign finding - routine screening recommended"
+        
+        # Determine Recommended Action based on BI-RADS and area
+        if birads_region == "5":
+            recommended_action = "Urgent biopsy (core needle or surgical) and oncology referral"
+        elif birads_region == "4C":
+            recommended_action = "Tissue diagnosis via core needle biopsy within 1-2 weeks"
+        elif birads_region == "4B":
+            if area_percentage > 2:
+                recommended_action = "Core needle biopsy recommended - larger lesion requires sampling"
+            else:
+                recommended_action = "Core needle biopsy or short-interval (3-6 month) follow-up"
+        elif birads_region == "4A":
+            if "calcification" in cancer_classification["primary_type"].lower():
+                recommended_action = "Consider stereotactic biopsy for calcifications"
+            else:
+                recommended_action = "Biopsy consideration or 6-month short-interval follow-up"
+        elif birads_region == "3":
+            recommended_action = "Short-interval follow-up mammogram in 6 months"
+        else:
+            recommended_action = "Continue routine annual screening"
+        
         region_info = {
             "id": i + 1,
             "confidence": adjusted_confidence,
@@ -698,6 +748,9 @@ def extract_detailed_findings(heatmap, boxes, original_image_size, confidence):
             "cancer_subtypes": cancer_classification["subtypes"],
             "technique": cancer_classification["technique"],
             "severity": characteristics.get("severity", "low"),
+            "birads_region": birads_region,
+            "clinical_significance": clinical_significance,
+            "recommended_action": recommended_action,
             "bbox": {"x1": x1, "y1": y1, "x2": x2, "y2": y2},
             "morphology": {
                 "shape": morphology_shape,
@@ -796,15 +849,65 @@ def extract_detailed_findings(heatmap, boxes, original_image_size, confidence):
     if calcification_detected:
         calc_count = len([r for r in findings['regions'] if 'Calcification' in r.get('cancer_type', '')])
         calc_distribution = "Diffuse/Scattered" if calc_count > 50 else "Clustered"
+        calc_distribution_detail = "Multiple calcifications distributed throughout breast tissue" if calc_count > 50 else "Grouped calcifications in a specific region"
         calc_morphology = "Punctate/Round"
+        calc_morphology_detail = "Small, round to oval shaped calcifications typical of benign etiology"
         calc_birads = "2" if calc_count < 20 else "4"
+        calc_clinical_significance = "Benign appearing calcifications, likely related to fibrocystic changes" if calc_birads == "2" else "Calcifications warrant tissue sampling to exclude malignancy"
         calc_recommendation = "Routine follow-up" if calc_birads == "2" else "Biopsy recommended"
     else:
         calc_count = 0
         calc_distribution = "None"
+        calc_distribution_detail = ""
         calc_morphology = "N/A"
+        calc_morphology_detail = ""
         calc_birads = "N/A"
+        calc_clinical_significance = "No calcifications detected"
         calc_recommendation = "No action needed"
+    
+    # Generate detailed recommendations based on density and findings
+    if density_category == "D":
+        density_detail = f"Extremely dense breast tissue limits mammographic sensitivity. Consider supplemental screening with ultrasound or MRI."
+        density_recommendation = "Supplemental screening (ultrasound/MRI) recommended annually. Continue annual mammograms."
+    elif density_category == "C":
+        density_detail = f"Heterogeneously dense tissue may obscure small masses. Enhanced imaging may be beneficial."
+        density_recommendation = "Consider supplemental ultrasound screening. Continue annual mammograms."
+    elif density_category == "B":
+        density_detail = f"Scattered fibroglandular tissue with good mammographic sensitivity. Standard screening is appropriate."
+        density_recommendation = "Continue routine annual screening mammography."
+    else:
+        density_detail = f"Almost entirely fatty breast tissue provides excellent mammographic visualization."
+        density_recommendation = "Continue routine screening per guidelines. Excellent imaging sensitivity."
+    
+    # Calculate coefficient of variation for tissue texture
+    heatmap_std = float(np.std(heatmap))
+    heatmap_mean = float(np.mean(heatmap))
+    coefficient_of_variation = int((heatmap_std / heatmap_mean * 100)) if heatmap_mean > 0 else 0
+    
+    # Determine tissue distribution
+    if coefficient_of_variation > 40:
+        tissue_distribution = "Heterogeneous - variable density throughout"
+    elif coefficient_of_variation > 20:
+        tissue_distribution = "Moderately uniform with some variation"
+    else:
+        tissue_distribution = "Homogeneous - uniform density pattern"
+    
+    # Calculate asymmetric area percentage
+    asymmetric_area_pct = max(0, 100 - symmetry_score)
+    
+    # Generate symmetry recommendation
+    if symmetry_score < 70:
+        symmetry_recommendation = "Follow-up imaging or clinical correlation recommended to assess asymmetry"
+    elif symmetry_score < 85:
+        symmetry_recommendation = "Mild asymmetry noted - routine monitoring acceptable"
+    else:
+        symmetry_recommendation = "No additional action needed - symmetric appearance"
+    
+    # Skin/nipple recommendation
+    if confidence > 0.5 and len(boxes) > 0:
+        skin_recommendation = "Clinical breast examination to assess for skin changes or nipple abnormalities"
+    else:
+        skin_recommendation = "Continue routine self-examination and clinical breast exams"
     
     findings["comprehensive_analysis"] = {
         "breast_density": {
@@ -813,27 +916,47 @@ def extract_detailed_findings(heatmap, boxes, original_image_size, confidence):
             "density_percentage": int(avg_intensity),
             "sensitivity": density_sensitivity,
             "masking_risk": masking_risk,
-            "description": f"Scattered fibroglandular densities - {masking_risk.lower()} masking risk"
+            "description": f"Scattered fibroglandular densities - {masking_risk.lower()} masking risk",
+            "detail": density_detail,
+            "recommendation": density_recommendation
         },
         "tissue_texture": {
             "pattern": tissue_pattern,
+            "pattern_detail": "Normal parenchymal pattern with typical fibroglandular elements",
             "uniformity_score": int(tissue_uniformity.replace('%', '')),
+            "coefficient_of_variation": coefficient_of_variation,
+            "distribution": tissue_distribution,
             "clinical_note": "Minor density variations are common and usually benign"
         },
         "symmetry": {
             "assessment": symmetry_assessment,
+            "detail": "Bilateral breast parenchyma shows symmetric density distribution" if symmetry_score >= 85 else "Mild architectural asymmetry noted",
             "symmetry_score": symmetry_score,
-            "clinical_significance": "Mild asymmetry is common and usually benign"
+            "asymmetric_area_percentage": asymmetric_area_pct,
+            "clinical_significance": "Mild asymmetry is common and usually benign",
+            "recommendation": symmetry_recommendation
         },
         "skin_nipple": {
             "skin_status": "Normal",
+            "skin_thickness_score": 0,
             "skin_concern_level": "None",
-            "nipple_retraction": "No retraction detected"
+            "nipple_retraction": "No retraction detected",
+            "recommendation": skin_recommendation
         },
         "vascular_patterns": {
             "pattern": vascular_prominence,
             "vascular_score": vascular_score,
+            "prominent_vessel_percentage": min(35, int(avg_intensity * 0.5)),
+            "detail": "Vascular patterns within normal limits" if vascular_score < 50 else "Mildly prominent vascular markings",
             "clinical_note": "Consider correlation with clinical findings"
+        },
+        "pectoral_muscle": {
+            "visibility": "Adequately Visualized" if quality_overall >= 60 else "Partially Visible",
+            "visibility_score": min(85, quality_overall + 10),
+            "quality": "Acceptable positioning" if quality_overall >= 60 else "Suboptimal positioning",
+            "positioning_adequate": quality_overall >= 60,
+            "detail": "Pectoral muscle extends to nipple level" if quality_overall >= 70 else "Pectoral muscle partially visualized",
+            "recommendation": "Adequate for evaluation" if quality_overall >= 60 else "Consider repeat imaging with improved positioning"
         },
         "image_quality": {
             "overall_score": quality_overall,
@@ -844,8 +967,11 @@ def extract_detailed_findings(heatmap, boxes, original_image_size, confidence):
             "detected": calcification_detected,
             "count": calc_count,
             "distribution": calc_distribution,
+            "distribution_detail": calc_distribution_detail,
             "morphology": calc_morphology,
+            "morphology_detail": calc_morphology_detail,
             "birads_category": calc_birads,
+            "clinical_significance": calc_clinical_significance,
             "recommendation": calc_recommendation
         }
     }

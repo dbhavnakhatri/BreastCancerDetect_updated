@@ -767,16 +767,17 @@ def generate_report_pdf(
             story.append(mlo_table)
             story.append(Spacer(1, 10))
         
-        # Comparative Analysis (if both views present)
-        if cc_analysis and mlo_analysis:
-            story.append(Paragraph('<b>COMPARATIVE ANALYSIS (CC vs MLO):</b>', subheading_style))
+        # Comparative Analysis / Summary
+        comparison_text = view_analysis.get('comparison', '')
+        if comparison_text:
+            if cc_analysis and mlo_analysis:
+                # Both views present - show comparative analysis
+                story.append(Paragraph('<b>COMPARATIVE ANALYSIS (CC vs MLO):</b>', subheading_style))
+            else:
+                # Single view - show summary
+                story.append(Paragraph('<b>VIEW SUMMARY:</b>', subheading_style))
+            
             story.append(Spacer(1, 4))
-            
-            comparison_text = view_analysis.get('comparison', 
-                'Findings are consistent between CC and MLO views. '
-                'Detected regions correlate appropriately across both projections. '
-                'No additional suspicious findings identified on comparison.')
-            
             story.append(Paragraph(comparison_text, normal_style))
             story.append(Spacer(1, 12))
     

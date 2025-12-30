@@ -46,13 +46,21 @@ def convert_numpy_types(obj):
 
 def generate_view_analysis(analysis, image):
     """
-    Generate CC (Craniocaudal) and MLO (Mediolateral Oblique) view analysis
-    based on the image analysis results.
+    Generate view-specific (CC or MLO) mammogram analysis based on detected view type.
+    Only returns the detected view, not both views.
     """
     findings = analysis.get("findings", {})
     regions = findings.get("regions", [])
     stats = analysis.get("stats", {})
     malignant_prob = analysis.get("malignant_prob", 0)
+    
+    # Get the detected view type from the analysis
+    view_analysis_data = analysis.get("view_analysis", {})
+    view_type_full = view_analysis_data.get("view_type", "")
+    
+    # Determine if it's MLO or CC based on the view_type string
+    is_mlo = "MLO" in view_type_full or "Medio-Lateral" in view_type_full
+    is_cc = "CC" in view_type_full or "Cranio-Caudal" in view_type_full
     
     # Determine breast density based on image statistics
     mean_intensity = stats.get("mean_intensity", 128)
@@ -98,47 +106,86 @@ def generate_view_analysis(analysis, image):
     else:
         impression = "No significant abnormality detected"
     
-    # CC View Analysis
-    cc_analysis = {
-        "image_quality": image_quality,
-        "positioning": "Properly positioned with adequate compression",
-        "breast_density": breast_density,
-        "masses": masses_desc,
-        "calcifications": calc_desc,
-        "asymmetry": asymmetry_desc,
-        "skin_nipple_changes": "No skin thickening or nipple retraction",
-        "medial_coverage": "Adequate medial tissue included",
-        "lateral_coverage": "Adequate lateral tissue included",
-        "impression": impression,
-    }
+    # Generate comparison text based on detected view
+    if is_mlo:
+        comparison = (
+            f"MLO view findings as described above. "
+            f"Breast density is {breast_density.split('(')[0].strip().lower()}. "
+            f"{'Suspicious findings warrant further evaluation.' if malignant_prob >= 50 else 'No additional suspicious findings detected.'}"
+        )
+    elif is_cc:
+        comparison = (
+            f"CC view findings as described above. "
+            f"Breast density is {breast_density.split('(')[0].strip().lower()}. "
+            f"{'Suspicious findings warrant further evaluation.' if malignant_prob >= 50 else 'No additional suspicious findings detected.'}"
+        )
+    else:
+        comparison = (
+            f"View type could not be determined from filename. "
+            f"Breast density is {breast_density.split('(')[0].strip().lower()}. "
+            f"{'Suspicious findings warrant further evaluation.' if malignant_prob >= 50 else 'Findings as described above.'}"
+        )
     
-    # MLO View Analysis
-    mlo_analysis = {
-        "image_quality": image_quality,
-        "positioning": "Properly positioned with pectoral muscle to nipple level",
-        "breast_density": breast_density,
-        "masses": masses_desc,
-        "calcifications": calc_desc,
-        "architectural_distortion": distortion_desc,
-        "pectoral_muscle": "Adequately visualized extending to nipple level",
-        "axillary_findings": "No suspicious axillary lymphadenopathy",
-        "inframammary_fold": "Inframammary fold included",
-        "impression": impression,
-    }
+    # Create view-specific analysis structure
+    result = {"comparison": comparison}
     
-    # Comparative analysis
-    comparison = (
-        f"Findings are consistent between CC and MLO views. "
-        f"{'Detected regions correlate appropriately across both projections. ' if len(regions) > 0 else ''}"
-        f"Breast density is {breast_density.split('(')[0].strip().lower()}. "
-        f"{'Suspicious findings warrant further evaluation.' if malignant_prob >= 50 else 'No additional suspicious findings on comparison.'}"
-    )
+    # Only add the detected view to the result
+    if is_mlo:
+        # MLO View Analysis
+        result["mlo"] = {
+            "image_quality": image_quality,
+            "positioning": "Properly positioned with pectoral muscle to nipple level",
+            "breast_density": breast_density,
+            "masses": masses_desc,
+            "calcifications": calc_desc,
+            "architectural_distortion": distortion_desc,
+            "pectoral_muscle": "Adequately visualized extending to nipple level",
+            "axillary_findings": "No suspicious axillary lymphadenopathy",
+            "inframammary_fold": "Inframammary fold included",
+            "impression": impression,
+        }
+    elif is_cc:
+        # CC View Analysis
+        result["cc"] = {
+            "image_quality": image_quality,
+            "positioning": "Properly positioned with adequate compression",
+            "breast_density": breast_density,
+            "masses": masses_desc,
+            "calcifications": calc_desc,
+            "asymmetry": asymmetry_desc,
+            "skin_nipple_changes": "No skin thickening or nipple retraction",
+            "medial_coverage": "Adequate medial tissue included",
+            "lateral_coverage": "Adequate lateral tissue included",
+            "impression": impression,
+        }
+    else:
+        # If view type cannot be determined, include both for compatibility
+        result["cc"] = {
+            "image_quality": image_quality,
+            "positioning": "Properly positioned with adequate compression",
+            "breast_density": breast_density,
+            "masses": masses_desc,
+            "calcifications": calc_desc,
+            "asymmetry": asymmetry_desc,
+            "skin_nipple_changes": "No skin thickening or nipple retraction",
+            "medial_coverage": "Adequate medial tissue included",
+            "lateral_coverage": "Adequate lateral tissue included",
+            "impression": impression,
+        }
+        result["mlo"] = {
+            "image_quality": image_quality,
+            "positioning": "Properly positioned with pectoral muscle to nipple level",
+            "breast_density": breast_density,
+            "masses": masses_desc,
+            "calcifications": calc_desc,
+            "architectural_distortion": distortion_desc,
+            "pectoral_muscle": "Adequately visualized extending to nipple level",
+            "axillary_findings": "No suspicious axillary lymphadenopathy",
+            "inframammary_fold": "Inframammary fold included",
+            "impression": impression,
+        }
     
-    return {
-        "cc": cc_analysis,
-        "mlo": mlo_analysis,
-        "comparison": comparison,
-    }
+    return result
 
 
 app = FastAPI(
