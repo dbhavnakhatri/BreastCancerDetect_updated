@@ -348,26 +348,45 @@ def draw_bounding_boxes_with_cancer_type(image, regions, line_width=4):
 
 def draw_bounding_boxes(image, boxes, box_color='red', text_color='white', line_width=3):
     """
-    Draw simple bounding boxes on an image WITHOUT any labels.
-    Pure region detection visualization.
+    Draw bounding boxes on an image.
     
     Args:
         image: PIL Image
         boxes: List of bounding boxes [(x1, y1, x2, y2, confidence), ...]
         box_color: Color for the bounding box
-        text_color: Color for the confidence text (not used, kept for compatibility)
+        text_color: Color for the confidence text
         line_width: Width of the bounding box lines
     
     Returns:
-        PIL Image with simple bounding boxes drawn (no labels)
+        PIL Image with bounding boxes drawn
     """
     img_copy = image.copy()
     draw = ImageDraw.Draw(img_copy)
     
-    # Draw ONLY rectangles - no labels, no text, just clean detection boxes
+    try:
+        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 16)
+    except:
+        font = ImageFont.load_default()
+    
     for i, (x1, y1, x2, y2, confidence) in enumerate(boxes):
-        # Draw simple rectangle outline
+        # Draw rectangle
         draw.rectangle([x1, y1, x2, y2], outline=box_color, width=line_width)
+        
+        # Draw label - position above or inside box depending on space
+        label = f"Region {i+1}: {confidence*100:.1f}%"
+        
+        # Check if there's enough space above the box (need ~25 pixels)
+        if y1 >= 25:
+            label_y = y1 - 20
+        else:
+            # Not enough space above, put it inside the box at the top
+            label_y = y1 + 5
+        
+        bbox = draw.textbbox((x1, label_y), label, font=font)
+        draw.rectangle([bbox[0]-2, bbox[1]-2, bbox[2]+2, bbox[3]+2], fill=box_color)
+        
+        # Draw label text
+        draw.text((x1, label_y), label, fill=text_color, font=font)
     
     return img_copy
 
@@ -935,22 +954,22 @@ def create_gradcam_visualization(original_image, preprocessed_img, model, confid
         cancer_type_image = None
         
         if detailed_findings and detailed_findings['regions']:
-            # Create bbox image with SIMPLE boxes (no labels) - just detection
+            # Create bbox image with SIMPLE numbered regions (Region 1, Region 2, etc.)
             bbox_image = draw_bounding_boxes(
                 original_image,
-                filtered_boxes,  # Use raw boxes with confidence only
+                filtered_boxes,  # Use raw boxes: [(x1, y1, x2, y2, confidence), ...]
                 box_color='red',
                 line_width=4
             )
             
-            # Cancer type image - WITH cancer type labels attached to each box
+            # Cancer type image - Shows cancer type labels (Calcifications, Mass, etc.)
             cancer_type_image = draw_bounding_boxes_with_cancer_type(
                 original_image,
                 detailed_findings['regions'],
                 line_width=4
             )
             
-            print(f"DEBUG: Detected {len(detailed_findings['regions'])} regions - BBox (simple) vs Cancer Type (labeled)")
+            print(f"DEBUG: BBox shows {len(filtered_boxes)} simple regions, Cancer Type shows labeled regions")
         else:
             # Fallback: show original image if no regions detected
             bbox_image = original_image.copy()
