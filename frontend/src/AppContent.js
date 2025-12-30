@@ -130,8 +130,46 @@ function AppContent() {
     if (e.target.files && e.target.files[0]) {
       const selectedFile = e.target.files[0];
       setFile(selectedFile);
+      
+      // Extract view code from filename immediately for real-time display
+      const viewCode = extractViewCodeFromFilename(selectedFile.name);
+      if (viewCode) {
+        setResults(prev => ({
+          ...prev,
+          view_analysis: {
+            view_code: viewCode,
+            laterality: viewCode.includes('L') && !viewCode.includes('R') ? 'Left' : 'Right',
+            laterality_code: viewCode.includes('L') && !viewCode.includes('R') ? 'L' : 'R',
+            image_quality: 'Analyzing...',
+            quality_score: null,
+          }
+        }));
+      }
+      
       analyzeFile(selectedFile);
     }
+  };
+  
+  // Helper function to extract view code from filename
+  const extractViewCodeFromFilename = (filename) => {
+    const upperName = filename.toUpperCase();
+    
+    // Check for specific patterns
+    if (upperName.includes('LMLO') || upperName.includes('LEFT_MLO') || upperName.includes('L-MLO')) {
+      return 'L-MLO';
+    } else if (upperName.includes('RMLO') || upperName.includes('RIGHT_MLO') || upperName.includes('R-MLO')) {
+      return 'R-MLO';
+    } else if (upperName.includes('LCC') || upperName.includes('LEFT_CC') || upperName.includes('L-CC')) {
+      return 'LCC';
+    } else if (upperName.includes('RCC') || upperName.includes('RIGHT_CC') || upperName.includes('R-CC')) {
+      return 'RCC';
+    } else if (upperName.includes('MLO')) {
+      return 'MLO';
+    } else if (upperName.includes('CC')) {
+      return 'CC';
+    }
+    
+    return null;
   };
 
   const handleDragOver = (e) => {
@@ -150,6 +188,22 @@ function AppContent() {
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       const droppedFile = e.dataTransfer.files[0];
       setFile(droppedFile);
+      
+      // Extract view code from filename immediately for real-time display
+      const viewCode = extractViewCodeFromFilename(droppedFile.name);
+      if (viewCode) {
+        setResults(prev => ({
+          ...prev,
+          view_analysis: {
+            view_code: viewCode,
+            laterality: viewCode.includes('L') && !viewCode.includes('R') ? 'Left' : 'Right',
+            laterality_code: viewCode.includes('L') && !viewCode.includes('R') ? 'L' : 'R',
+            image_quality: 'Analyzing...',
+            quality_score: null,
+          }
+        }));
+      }
+      
       analyzeFile(droppedFile);
     }
   };
@@ -908,6 +962,17 @@ function AppContent() {
               <section className="section">
                 <p className="regions-header" style={{ textAlign: 'center' }}>
                   Mammogram View Analysis
+                  {isAnalyzing && (
+                    <span style={{ 
+                      marginLeft: '12px', 
+                      fontSize: '0.75rem', 
+                      color: '#F57C00', 
+                      fontWeight: '500',
+                      animation: 'pulse 1.5s ease-in-out infinite'
+                    }}>
+                      • Completing analysis...
+                    </span>
+                  )}
                 </p>
                 
                 <div style={{ 
@@ -916,7 +981,9 @@ function AppContent() {
                     ? 'linear-gradient(135deg, #EDE7F6 0%, #D1C4E9 100%)' 
                     : 'linear-gradient(135deg, #E0F2F1 0%, #B2DFDB 100%)', 
                   borderRadius: '12px', 
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.1)' 
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+                  opacity: isAnalyzing ? 0.9 : 1,
+                  transition: 'opacity 0.3s ease'
                 }}>
                   {/* View Type Header with View Code Badge */}
                   <div style={{ 
@@ -979,8 +1046,8 @@ function AppContent() {
                     {/* Quality Score */}
                     <div style={{ padding: '12px', background: 'rgba(255,255,255,0.6)', borderRadius: '8px' }}>
                       <div style={{ fontSize: '0.75rem', color: '#666', marginBottom: '4px' }}>Quality Score</div>
-                      <div style={{ fontWeight: '700', fontSize: '1.2rem', color: results.view_analysis.quality_score >= 70 ? '#2E7D32' : '#F57C00' }}>
-                        {results.view_analysis.quality_score || 'N/A'}%
+                      <div style={{ fontWeight: '700', fontSize: '1.2rem', color: results.view_analysis.quality_score >= 70 ? '#2E7D32' : results.view_analysis.quality_score ? '#F57C00' : '#999' }}>
+                        {results.view_analysis.quality_score ? `${results.view_analysis.quality_score}%` : '...'}
                       </div>
                     </div>
                     
