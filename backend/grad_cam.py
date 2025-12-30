@@ -836,7 +836,7 @@ def extract_detailed_findings(heatmap, boxes, original_image_size, confidence):
             "clinical_note": "Consider correlation with clinical findings"
         },
         "image_quality": {
-            "overall_quality": quality_overall,
+            "overall_score": quality_overall,
             "positioning": quality_positioning,
             "technical_adequacy": quality_technical
         },
