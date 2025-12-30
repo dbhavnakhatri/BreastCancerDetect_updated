@@ -14,11 +14,11 @@ call .\venv\Scripts\activate.bat
 
 echo.
 echo Starting FastAPI server...
-echo Backend will be available at: http://127.0.0.1:8001
-echo API Documentation: http://127.0.0.1:8001/docs
+echo Backend will be available at: http://localhost:8000
+echo API Documentation: http://localhost:8000/docs
 echo.
 echo Press Ctrl+C to stop the server
 echo.
 
-python -m uvicorn main:app --reload --host 127.0.0.1 --port 8001
+python -m uvicorn main:app --reload --host 127.0.0.1 --port 8000
 

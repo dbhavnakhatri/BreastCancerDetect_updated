@@ -11,7 +11,7 @@ echo.
 
 REM Start Backend in new window
 echo [1/2] Starting Backend Server (FastAPI)...
-start "Backend - FastAPI" cmd /k "cd backend && .\venv\Scripts\activate && python -m uvicorn main:app --reload --host 127.0.0.1 --port 8001"
+start "Backend - FastAPI" cmd /k "cd backend && .\venv\Scripts\activate && python -m uvicorn main:app --reload --host 127.0.0.1 --port 8000"
 
 REM Wait a bit for backend to start
 timeout /t 5 /nobreak >nul
@@ -25,9 +25,9 @@ echo ========================================
 echo Servers Starting...
 echo ========================================
 echo.
-echo Backend:  http://127.0.0.1:8001
+echo Backend:  http://localhost:8000
 echo Frontend: http://localhost:3000
-echo API Docs: http://127.0.0.1:8001/docs
+echo API Docs: http://localhost:8000/docs
 echo.
 echo Both servers will open in separate windows.
 echo Close those windows to stop the servers.

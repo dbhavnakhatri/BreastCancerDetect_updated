@@ -8,20 +8,20 @@ import { useAuth } from "./context/AuthContext";
 import { useNavigate } from "react-router-dom";
 
 const getDefaultApiBase = () => {
-  // Check for environment variable first (for production deployment)
+  // Auto-detect: Use local backend when running on localhost
+  if (typeof window !== "undefined") {
+    const localHosts = ["localhost", "127.0.0.1", "0.0.0.0"];
+    if (localHosts.includes(window.location.hostname)) {
+      console.log("Auto-detected local environment - Using backend: http://localhost:8000");
+      return "http://localhost:8000";
+    }
+  }
+
+  // For production deployment, check environment variable
   const envUrl = process.env.REACT_APP_API_BASE_URL;
   if (envUrl && envUrl.trim().length > 0) {
     console.log("Using API URL from env:", envUrl);
     return envUrl.replace(/\/$/, "");
-  }
-
-  // For local development
-  if (typeof window !== "undefined") {
-    const localHosts = ["localhost", "127.0.0.1", "0.0.0.0"];
-    if (localHosts.includes(window.location.hostname)) {
-      console.log("Using local API URL: http://127.0.0.1:8001");
-      return "http://127.0.0.1:8001";
-    }
   }
 
   // Fallback for production (Render backend)

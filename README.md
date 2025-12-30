@@ -1,95 +1,166 @@
-# Breast Cancer Detection – Vercel Deployment Ready
+# Breast Cancer Detection System
 
-This repository bundles the Streamlit/FastAPI deep-learning backend and the React frontend so they can be deployed together on [Vercel](https://vercel.com/).
+AI-powered breast cancer detection using deep learning for mammogram analysis.
 
-## Repository Structure
+## 🚀 Quick Start
 
+### Prerequisites
+- Python 3.8+ installed
+- Node.js 14+ installed
+- Git installed
+
+### Installation
+
+1. **Clone the repository**
+```bash
+git clone <your-repo-url>
+cd Breast_Cancer-main
 ```
-BreastCancerDetect/
-├── backend/               # FastAPI app + TensorFlow model + Grad-CAM utilities
-├── frontend/              # React single-page UI (Create React App)
-├── vercel.json            # Multi-build + routing config for Vercel
-└── README.md
-```
 
-## Local Development
-
-### Backend
-
+2. **Install Backend Dependencies**
 ```bash
 cd backend
-python -m venv .venv
-.venv\Scripts\activate        # or source .venv/bin/activate on macOS/Linux
+python -m venv venv
+venv\Scripts\activate  # On Windows
+# or
+source venv/bin/activate  # On Mac/Linux
 pip install -r requirements.txt
-uvicorn main:app --reload --port 8000
 ```
 
-Environment variables:
-
-| Variable        | Purpose                                                                 |
-|-----------------|-------------------------------------------------------------------------|
-| `MODEL_PATH`    | Optional custom path to `breast_cancer_model.keras`. Defaults to `backend/models/...`. |
-| `ALLOWED_ORIGINS` | CSV list of origins for CORS. Defaults to `*`.                          |
-
-### Frontend
-
+3. **Install Frontend Dependencies**
 ```bash
 cd frontend
 npm install
-cp .env.example .env        # optional: override API base URL
+```
+
+### Running the Application
+
+**Option 1: Run Both Servers Together (Recommended)**
+```bash
+# From project root directory
+start_project.bat  # On Windows
+```
+
+**Option 2: Run Servers Separately**
+
+Backend:
+```bash
+cd backend
+start_backend.bat  # On Windows
+# or
+python -m uvicorn main:app --reload --host 127.0.0.1 --port 8000
+```
+
+Frontend:
+```bash
+cd frontend
 npm start
 ```
 
-`REACT_APP_API_BASE_URL` defaults to `http://127.0.0.1:8000` during local development and to `/api` in production.
+### Access the Application
 
-## Deploying to Vercel
+- **Frontend UI**: http://localhost:3000
+- **Backend API**: http://localhost:8000
+- **API Documentation**: http://localhost:8000/docs
 
-1. **Import the repo** into Vercel.
-2. Ensure the project uses the root directory (the `vercel.json` file takes care of multi-build setup).
-3. Configure environment variables (Project Settings → Environment Variables):
-   - Backend: `MODEL_PATH` (if the model resides in Blob/S3) and `ALLOWED_ORIGINS` if you want to restrict CORS.
-   - Frontend: `REACT_APP_API_BASE_URL` (set to `https://<your-domain>/api` if you need an explicit value).
-4. The provided `vercel.json`:
-   - Builds the React app via `@vercel/static-build`.
-   - Packages the FastAPI app via `@vercel/python`.
-   - Routes `/api/*` to the backend and every other route to the React `build/` output.
-   - Increases the Python serverless function limits (duration, memory, bundle size) to handle TensorFlow + the 300 MB `.keras` model. You will need a Vercel Pro plan (or higher) because of the model’s size.
-5. Trigger a deployment. Vercel will run both builds in parallel and apply the rewrites automatically.
+## 📁 Project Structure
 
-### Notes on the TensorFlow Model
+```
+Breast_Cancer-main/
+├── backend/
+│   ├── main.py                      # FastAPI backend
+│   ├── grad_cam.py                  # Grad-CAM visualization
+│   ├── report_generator.py          # PDF report generation
+│   ├── yolo_detector.py             # YOLO detection
+│   ├── models/
+│   │   └── breast_cancer_model.keras  # AI model (308 MB)
+│   ├── requirements.txt             # Python dependencies
+│   └── start_backend.bat            # Backend startup script
+├── frontend/
+│   ├── src/
+│   │   ├── App.js                   # Main React app
+│   │   ├── AppContent.js            # Core functionality
+│   │   └── components/              # React components
+│   ├── package.json                 # Node dependencies
+│   └── start_frontend.bat           # Frontend startup script
+├── start_project.bat                # Start both servers
+└── README.md                        # This file
+```
 
-- The bundled `breast_cancer_model.keras` file is ~300 MB. Keep it inside `backend/models/` or host it externally and point `MODEL_PATH` to the download location (ensure the file is available inside the lambda at runtime).
-- Cold starts can take several seconds because TensorFlow + the model have to be loaded into memory. Consider warming the endpoint with a cron ping if response latency matters.
+## 🎯 Features
 
-## API Surface
+- **AI-Powered Analysis**: Deep learning model for breast cancer detection
+- **Grad-CAM Visualization**: Heatmaps showing areas of concern
+- **Region Detection**: Automatic detection and classification of suspicious regions
+- **BI-RADS Classification**: Medical standard classification system
+- **PDF Reports**: Comprehensive medical reports with all findings
+- **View Detection**: Automatic CC/MLO view identification
+- **User Authentication**: Secure login and user management
 
-| Method | Path        | Description                         |
-|--------|-------------|-------------------------------------|
-| `GET`  | `/api/health` | Health check + model load status.   |
-| `POST` | `/api/analyze` | Multi-part file upload → JSON response containing probabilities, stats, and Grad-CAM visualisations (base64). |
-| `POST` | `/api/report`  | Multi-part file upload → PDF download (generated via ReportLab). |
+## 🔧 Configuration
 
-## Frontend Behaviour
+### Backend Port
+Default: `8000`
+To change: Edit `backend/start_backend.bat` or `start_project.bat`
 
-- Automatically detects the correct API base URL (`REACT_APP_API_BASE_URL`, `localhost`, or `/api`).
-- Provides status/error messaging, disables controls while the backend is processing, and surfaces all Grad-CAM assets returned by the API.
-- The `.env.example` file documents the single environment variable that CRA exposes to the browser.
+### Frontend Port
+Default: `3000`
+To change: Edit `frontend/package.json` scripts section
 
-## Testing Checklist
+### Auto-Connection
+The frontend automatically connects to `http://localhost:8000` when running locally.
+No manual configuration needed!
 
-1. `npm run build` in `frontend/` completes without warnings.
-2. `uvicorn main:app --reload` works locally and `/docs` lists all endpoints.
-3. `vercel build` (optional) succeeds locally if you have Vercel CLI installed; otherwise rely on the hosted pipeline.
-4. After deployment, upload a sample image through the Vercel-hosted UI and verify:
-   - `/api/health` returns `{ "status": "ok", "model_loaded": true }`.
-   - `/api/analyze` returns the expected payload.
-   - `/api/report` downloads a PDF.
+## 📊 API Endpoints
 
-## Troubleshooting
+- `GET /health` - Health check and model status
+- `POST /analyze` - Upload image for analysis
+- `POST /report` - Generate PDF report
+- `GET /docs` - Interactive API documentation
 
-- **ModuleNotFoundError for TensorFlow** – ensure the version in `backend/requirements.txt` matches the lambda runtime (Python 3.11 at the time of writing).
-- **Lambda bundle too large** – you must be on a Pro/Enterprise plan and may need to host the model externally plus download it at runtime.
-- **CORS errors** – set `ALLOWED_ORIGINS` to the deployed frontend domain when splitting the stacks.
+## 🛠️ Troubleshooting
 
-Feel free to adapt the deployment strategy (e.g., host the backend on Railway/Render) if Vercel’s limits become restrictive. The codebase now supports both single-origin Vercel deployments and traditional multi-service setups.
+### Backend won't start
+- Ensure Python 3.8+ is installed
+- Activate virtual environment
+- Install dependencies: `pip install -r requirements.txt`
+- Check if port 8000 is available
 
+### Frontend won't start
+- Ensure Node.js 14+ is installed
+- Install dependencies: `npm install`
+- Check if port 3000 is available
+- Clear npm cache: `npm cache clean --force`
+
+### Model not found error
+- Ensure `backend/models/breast_cancer_model.keras` exists
+- File size should be ~308 MB
+- Re-download if corrupted
+
+### Connection refused
+- Ensure backend is running on port 8000
+- Check firewall settings
+- Verify CORS is enabled in backend
+
+## ⚠️ Important Notes
+
+- **Educational Use Only**: This system is for educational and research purposes
+- **Not for Medical Diagnosis**: Not approved for clinical use
+- **Model Size**: The AI model is 308 MB - ensure adequate disk space
+- **Processing Time**: Analysis takes 10-15 seconds per image
+
+## 📝 License
+
+Educational and Research Use Only
+
+## 🤝 Support
+
+For issues or questions, please check:
+1. API documentation at http://localhost:8000/docs
+2. Console logs in browser (F12)
+3. Backend terminal for error messages
+
+---
+
+**Version**: 1.0.0  
+**Last Updated**: December 2025
