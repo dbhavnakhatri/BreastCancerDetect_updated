@@ -809,34 +809,34 @@ def extract_detailed_findings(heatmap, boxes, original_image_size, confidence):
     findings["comprehensive_analysis"] = {
         "breast_density": {
             "category": density_category,
-            "type": density_type,
-            "density_percent": f"{int(avg_intensity)}%",
+            "density_category": density_category,
+            "density_percentage": int(avg_intensity),
             "sensitivity": density_sensitivity,
             "masking_risk": masking_risk,
-            "description": f"Scattered fibroglandular densities"
+            "description": f"Scattered fibroglandular densities - {masking_risk.lower()} masking risk"
         },
         "tissue_texture": {
             "pattern": tissue_pattern,
-            "uniformity": tissue_uniformity,
-            "description": "Minor density variations are common and usually benign"
+            "uniformity_score": int(tissue_uniformity.replace('%', '')),
+            "clinical_note": "Minor density variations are common and usually benign"
         },
         "symmetry": {
             "assessment": symmetry_assessment,
-            "score": f"{symmetry_score}%",
-            "description": "Mild asymmetry is common and usually benign"
+            "symmetry_score": symmetry_score,
+            "clinical_significance": "Mild asymmetry is common and usually benign"
         },
         "skin_nipple": {
-            "skin": "Normal",
-            "concern": "None",
-            "nipple": "Possible - requires clinical correlation"
+            "skin_status": "Normal",
+            "skin_concern_level": "None",
+            "nipple_retraction": "No retraction detected"
         },
         "vascular_patterns": {
             "pattern": vascular_prominence,
-            "score": f"{vascular_score}%",
-            "description": "Consider correlation with clinical findings"
+            "vascular_score": vascular_score,
+            "clinical_note": "Consider correlation with clinical findings"
         },
         "image_quality": {
-            "overall_quality": f"{quality_overall}%",
+            "overall_quality": quality_overall,
             "positioning": quality_positioning,
             "technical_adequacy": quality_technical
         },
@@ -845,7 +845,7 @@ def extract_detailed_findings(heatmap, boxes, original_image_size, confidence):
             "count": calc_count,
             "distribution": calc_distribution,
             "morphology": calc_morphology,
-            "birads": calc_birads,
+            "birads_category": calc_birads,
             "recommendation": calc_recommendation
         }
     }
