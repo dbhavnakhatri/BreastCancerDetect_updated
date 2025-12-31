@@ -232,7 +232,9 @@ function AppContent() {
     setStatusMessage("Uploading image for analysis…");
     setErrorMessage("");
 
-    const currentApiUrl = apiUrl("/analyze");
+    // Use /predict for HF deployment, /analyze for local
+    const endpoint = apiBase.includes("huggingface") || apiBase.includes("hf.space") ? "/predict" : "/analyze";
+    const currentApiUrl = apiUrl(endpoint);
     console.log("Sending request to:", currentApiUrl);
 
     try {
