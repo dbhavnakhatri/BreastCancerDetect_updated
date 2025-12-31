@@ -8,8 +8,7 @@ __pycache__/
 dist/
 build/
 *.egg
-.venv/
-venv/
+
 ENV/
 
 # Node
@@ -33,10 +32,6 @@ frontend/build/
 .DS_Store
 Thumbs.db
 
-# Environment
-.env
-.env.local
-.env.*.local
 
 # Logs
 *.log
