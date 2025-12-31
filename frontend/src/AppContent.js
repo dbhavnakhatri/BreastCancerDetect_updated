@@ -232,8 +232,10 @@ function AppContent() {
     setStatusMessage("Uploading image for analysis…");
     setErrorMessage("");
 
-    // Use /predict for HF deployment, /analyze for local
-    const endpoint = apiBase.includes("huggingface") || apiBase.includes("hf.space") ? "/predict" : "/analyze";
+    // Auto-detect endpoint based on backend URL
+    // HF deployment supports both /predict (legacy) and /analyze (new)
+    // Local backend uses /analyze
+    const endpoint = "/analyze";  // Use /analyze for all backends now
     const currentApiUrl = apiUrl(endpoint);
     console.log("Sending request to:", currentApiUrl);
 
