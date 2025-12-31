@@ -232,7 +232,7 @@ function AppContent() {
     setStatusMessage("Uploading image for analysis…");
     setErrorMessage("");
 
-    const currentApiUrl = apiUrl("/predict");
+    const currentApiUrl = apiUrl("/analyze");
     console.log("Sending request to:", currentApiUrl);
 
     try {

@@ -1,166 +1,292 @@
-# Breast Cancer Detection System
+---
+title: Breast Cancer Detection API
+emoji: 🩺
+colorFrom: pink
+colorTo: purple
+sdk: docker
+pinned: false
+license: other
+---
 
-AI-powered breast cancer detection using deep learning for mammogram analysis.
+# 🩺 Breast Cancer Detection API
 
-## 🚀 Quick Start
+**Backend-only REST API** for AI-powered breast cancer detection from mammogram images.
 
-### Prerequisites
-- Python 3.8+ installed
-- Node.js 14+ installed
-- Git installed
+[![Deploy on HF Spaces](https://huggingface.co/datasets/huggingface/badges/raw/main/deploy-on-spaces-md.svg)](https://huggingface.co/spaces/Bhavanakhatri/breastcancerdetection)
 
-### Installation
+---
 
-1. **Clone the repository**
+## 🚀 API Endpoints
+
+### Base URL
+```
+https://bhavanakhatri-breastcancerdetection.hf.space
+```
+
+### 1. Health Check
+```http
+GET /health
+```
+
+**Response:**
+```json
+{
+  "status": "healthy",
+  "service": "Breast Cancer Detection API",
+  "version": "1.0.0",
+  "model_status": "loaded"
+}
+```
+
+---
+
+### 2. Single Prediction
+```http
+POST /predict
+Content-Type: multipart/form-data
+
+file: <image_file>
+```
+
+**cURL Example:**
 ```bash
-git clone <your-repo-url>
-cd Breast_Cancer-main
+curl -X POST "https://bhavanakhatri-breastcancerdetection.hf.space/predict" \
+  -F "file=@mammogram.jpg"
 ```
 
-2. **Install Backend Dependencies**
-```bash
-cd backend
-python -m venv venv
-venv\Scripts\activate  # On Windows
-# or
-source venv/bin/activate  # On Mac/Linux
-pip install -r requirements.txt
+**Python Example:**
+```python
+import requests
+
+url = "https://bhavanakhatri-breastcancerdetection.hf.space/predict"
+files = {"file": open("mammogram.jpg", "rb")}
+response = requests.post(url, files=files)
+print(response.json())
 ```
 
-3. **Install Frontend Dependencies**
-```bash
-cd frontend
-npm install
+**Response:**
+```json
+{
+  "prediction": "Benign",
+  "confidence": 0.9234,
+  "probabilities": {
+    "benign": 92.34,
+    "malignant": 7.66
+  },
+  "risk_assessment": {
+    "level": "Low Risk",
+    "icon": "🟢",
+    "color": "#33cc33"
+  },
+  "image_statistics": {
+    "brightness": 45.2,
+    "contrast": 18.5,
+    "mean_intensity": 115.3,
+    "std_intensity": 47.2
+  },
+  "image_info": {
+    "filename": "mammogram.jpg",
+    "size": "1024x768",
+    "format": "JPEG"
+  },
+  "disclaimer": "⚠️ For educational purposes only. Not for medical diagnosis."
+}
 ```
 
-### Running the Application
+---
 
-**Option 1: Run Both Servers Together (Recommended)**
-```bash
-# From project root directory
-start_project.bat  # On Windows
+### 3. Batch Prediction
+```http
+POST /batch-predict
+Content-Type: multipart/form-data
+
+files: <image_file_1>
+files: <image_file_2>
+...
 ```
 
-**Option 2: Run Servers Separately**
+**Python Example:**
+```python
+import requests
 
-Backend:
-```bash
-cd backend
-start_backend.bat  # On Windows
-# or
-python -m uvicorn main:app --reload --host 127.0.0.1 --port 8000
+url = "https://bhavanakhatri-breastcancerdetection.hf.space/batch-predict"
+files = [
+    ("files", open("image1.jpg", "rb")),
+    ("files", open("image2.jpg", "rb")),
+    ("files", open("image3.jpg", "rb"))
+]
+response = requests.post(url, files=files)
+print(response.json())
 ```
 
-Frontend:
-```bash
-cd frontend
-npm start
+**Response:**
+```json
+{
+  "total_images": 3,
+  "successful": 3,
+  "failed": 0,
+  "summary": {
+    "malignant": 1,
+    "benign": 2
+  },
+  "results": [
+    {
+      "filename": "image1.jpg",
+      "prediction": "Benign",
+      "confidence": 0.89,
+      "probabilities": {
+        "benign": 89.0,
+        "malignant": 11.0
+      }
+    },
+    {
+      "filename": "image2.jpg",
+      "prediction": "Malignant",
+      "confidence": 0.76,
+      "probabilities": {
+        "benign": 24.0,
+        "malignant": 76.0
+      }
+    },
+    {
+      "filename": "image3.jpg",
+      "prediction": "Benign",
+      "confidence": 0.94,
+      "probabilities": {
+        "benign": 94.0,
+        "malignant": 6.0
+      }
+    }
+  ]
+}
 ```
 
-### Access the Application
+**Limits:**
+- Maximum 10 images per batch request
 
-- **Frontend UI**: http://localhost:3000
-- **Backend API**: http://localhost:8000
-- **API Documentation**: http://localhost:8000/docs
+---
 
-## 📁 Project Structure
+## 📚 Interactive API Documentation
 
+Once deployed, visit:
+- **Swagger UI**: https://bhavanakhatri-breastcancerdetection.hf.space/
+- **ReDoc**: https://bhavanakhatri-breastcancerdetection.hf.space/redoc
+
+---
+
+## 🛠️ Technical Details
+
+### Model
+- **Architecture**: CNN (Convolutional Neural Network)
+- **Input**: 224x224 RGB images
+- **Output**: Binary classification (Benign/Malignant)
+- **Framework**: TensorFlow/Keras
+
+### API Framework
+- **FastAPI**: High-performance async API
+- **Uvicorn**: ASGI server
+- **CORS**: Enabled for all origins
+
+### Preprocessing
+- Resize to 224x224
+- RGB conversion
+- Normalization [0, 1]
+
+---
+
+## 🚦 Risk Levels
+
+| Probability | Risk Level | Icon |
+|-------------|------------|------|
+| ≥ 90% Malignant | Very High Risk | 🔴 |
+| 75-90% Malignant | High Risk | 🟠 |
+| 60-75% Malignant | Moderate-High Risk | 🟡 |
+| 40-60% | Moderate Risk | 🟡 |
+| ≥ 90% Benign | Very Low Risk | 🟢 |
+| 75-90% Benign | Low Risk | 🟢 |
+
+---
+
+## ⚠️ Disclaimer
+
+**This API is for educational and research purposes only.**
+
+- ❌ Not approved for clinical use
+- ❌ Not a replacement for professional medical diagnosis
+- ❌ Do not make medical decisions based on these predictions
+- ✅ Always consult qualified healthcare professionals
+
+---
+
+## 📊 Error Handling
+
+### 400 Bad Request
+- Invalid file type
+- Missing file
+- Too many files in batch (>10)
+
+### 500 Internal Server Error
+- Model loading failure
+- Prediction error
+- Processing error
+
+**Error Response Format:**
+```json
+{
+  "detail": "Error message description"
+}
 ```
-Breast_Cancer-main/
-├── backend/
-│   ├── main.py                      # FastAPI backend
-│   ├── grad_cam.py                  # Grad-CAM visualization
-│   ├── report_generator.py          # PDF report generation
-│   ├── yolo_detector.py             # YOLO detection
-│   ├── models/
-│   │   └── breast_cancer_model.keras  # AI model (308 MB)
-│   ├── requirements.txt             # Python dependencies
-│   └── start_backend.bat            # Backend startup script
-├── frontend/
-│   ├── src/
-│   │   ├── App.js                   # Main React app
-│   │   ├── AppContent.js            # Core functionality
-│   │   └── components/              # React components
-│   ├── package.json                 # Node dependencies
-│   └── start_frontend.bat           # Frontend startup script
-├── start_project.bat                # Start both servers
-└── README.md                        # This file
-```
 
-## 🎯 Features
+---
 
-- **AI-Powered Analysis**: Deep learning model for breast cancer detection
-- **Grad-CAM Visualization**: Heatmaps showing areas of concern
-- **Region Detection**: Automatic detection and classification of suspicious regions
-- **BI-RADS Classification**: Medical standard classification system
-- **PDF Reports**: Comprehensive medical reports with all findings
-- **View Detection**: Automatic CC/MLO view identification
-- **User Authentication**: Secure login and user management
+## 🔧 Development
 
-## 🔧 Configuration
+### Local Setup
 
-### Backend Port
-Default: `8000`
-To change: Edit `backend/start_backend.bat` or `start_project.bat`
+1. **Clone repository**
+   ```bash
+   git clone https://huggingface.co/spaces/Bhavanakhatri/breastcancerdetection
+   cd breastcancerdetection
+   ```
 
-### Frontend Port
-Default: `3000`
-To change: Edit `frontend/package.json` scripts section
+2. **Install dependencies**
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-### Auto-Connection
-The frontend automatically connects to `http://localhost:8000` when running locally.
-No manual configuration needed!
+3. **Run API**
+   ```bash
+   python app.py
+   ```
 
-## 📊 API Endpoints
+4. **Test API**
+   ```bash
+   curl http://localhost:7860/health
+   ```
 
-- `GET /health` - Health check and model status
-- `POST /analyze` - Upload image for analysis
-- `POST /report` - Generate PDF report
-- `GET /docs` - Interactive API documentation
-
-## 🛠️ Troubleshooting
-
-### Backend won't start
-- Ensure Python 3.8+ is installed
-- Activate virtual environment
-- Install dependencies: `pip install -r requirements.txt`
-- Check if port 8000 is available
-
-### Frontend won't start
-- Ensure Node.js 14+ is installed
-- Install dependencies: `npm install`
-- Check if port 3000 is available
-- Clear npm cache: `npm cache clean --force`
-
-### Model not found error
-- Ensure `backend/models/breast_cancer_model.keras` exists
-- File size should be ~308 MB
-- Re-download if corrupted
-
-### Connection refused
-- Ensure backend is running on port 8000
-- Check firewall settings
-- Verify CORS is enabled in backend
-
-## ⚠️ Important Notes
-
-- **Educational Use Only**: This system is for educational and research purposes
-- **Not for Medical Diagnosis**: Not approved for clinical use
-- **Model Size**: The AI model is 308 MB - ensure adequate disk space
-- **Processing Time**: Analysis takes 10-15 seconds per image
+---
 
 ## 📝 License
 
-Educational and Research Use Only
+Educational Use Only
+
+---
+
+## 👤 Author
+
+**Bhavna Khatri**
+- Hugging Face: [@Bhavanakhatri](https://huggingface.co/Bhavanakhatri)
+
+---
 
 ## 🤝 Support
 
-For issues or questions, please check:
-1. API documentation at http://localhost:8000/docs
-2. Console logs in browser (F12)
-3. Backend terminal for error messages
+For issues or questions:
+1. Check API documentation at `/` (Swagger UI)
+2. View `/health` endpoint for system status
+3. Open an issue on Hugging Face Space
 
 ---
 
 **Version**: 1.0.0  
-**Last Updated**: December 2025
+**Last Updated**: December 31, 2025
