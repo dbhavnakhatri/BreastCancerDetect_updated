@@ -26,7 +26,7 @@ const getDefaultApiBase = () => {
 
   // Fallback for production (Hugging Face Spaces backend)
   // Backend is deployed on HF Spaces
-  const productionUrl = "https://bhavanakhatri-breastcancerdetection.hf.space";
+  const productionUrl = "https://breast-cancer-backend-3aei.onrender.com";
   console.log("Using production API URL:", productionUrl);
   return productionUrl;
 };
