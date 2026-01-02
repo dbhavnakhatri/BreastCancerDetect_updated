@@ -24,10 +24,10 @@ const getDefaultApiBase = () => {
     return envUrl.replace(/\/$/, "");
   }
 
-  // Fallback for production (Hugging Face Spaces backend)
-  // Backend is deployed on HF Spaces
-  const productionUrl = "https://bhavanakhatri-breastcancerdetection.hf.space";
-  console.log("Using production API URL:", productionUrl);
+  // Fallback for production (Render backend)
+  // Backend is deployed on Render
+  const productionUrl = "https://breast-cancer-backend-3aei.onrender.com";
+  console.log("Using production API URL (Render):", productionUrl);
   return productionUrl;
 };
 
