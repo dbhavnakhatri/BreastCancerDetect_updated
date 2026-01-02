@@ -523,17 +523,18 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    """Simple health check - returns ok if server is running."""
-    model_status = "not_loaded"
+    """Simple health check - returns ok if server is running WITHOUT loading model."""
+    # Don't load model in health check to avoid memory issues
+    model_status = "not_checked"
     model_error = None
     
-    # Check if model file exists
+    # Only check if file exists, don't load it
     if MODEL_PATH.exists():
         try:
-            _ = get_model()
-            model_status = "loaded"
+            size_mb = MODEL_PATH.stat().st_size / (1024 * 1024)
+            model_status = f"file_exists_{size_mb:.1f}MB"
         except Exception as exc:
-            model_status = "error"
+            model_status = "file_check_error"
             model_error = str(exc)
     else:
         model_status = "missing"
@@ -544,7 +545,8 @@ async def health_check():
         "status": "ok",
         "model_status": model_status,
         "model_error": model_error,
-        "model_path": str(MODEL_PATH)
+        "model_path": str(MODEL_PATH),
+        "info": "Model will be loaded on first /analyze request"
     }
 
 
