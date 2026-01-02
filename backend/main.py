@@ -16,11 +16,14 @@ from typing import Dict, Any, Tuple, Optional, List
 import base64
 import io
 import os
+import gc
 from pathlib import Path
 
 import numpy as np
 from PIL import Image
-from tensorflow import keras
+
+# Lazy import TensorFlow to save memory on startup
+# from tensorflow import keras  # Moved to function level
 
 from grad_cam import create_gradcam_visualization, generate_mammogram_view_analysis
 from report_generator import generate_report_pdf
@@ -202,7 +205,7 @@ app = FastAPI(
 # ----------------- MODEL LOADING (shared) -----------------
 BASE_DIR = Path(__file__).resolve().parent
 MODEL_PATH = Path(os.environ.get("MODEL_PATH", BASE_DIR / "models" / "breast_cancer_model.keras"))
-_model: Optional[keras.Model] = None
+_model: Optional[Any] = None  # Lazy loaded, so using Any instead of keras.Model
 
 
 def check_model_exists():
@@ -220,8 +223,10 @@ def check_model_exists():
     return False
 
 
-def get_model() -> keras.Model:
+def get_model():
     """Model sirf ek baar load karo, baar-baar reuse karein."""
+    from tensorflow import keras
+    
     global _model
     if _model is None:
         # Check if model exists
@@ -235,6 +240,9 @@ def get_model() -> keras.Model:
             # Try loading with safe_mode=False for compatibility
             _model = keras.models.load_model(MODEL_PATH, compile=False, safe_mode=False)
             _model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+            
+            # Free up memory after loading
+            gc.collect()
         except TypeError as e:
             if "batch_shape" in str(e) or "safe_mode" in str(e):
                 # Keras version mismatch - recreate the model architecture
@@ -246,8 +254,9 @@ def get_model() -> keras.Model:
     return _model
 
 
-def _create_compatible_model() -> keras.Model:
+def _create_compatible_model():
     """Create a compatible model architecture for breast cancer detection."""
+    from tensorflow import keras
     from tensorflow.keras import layers, Sequential
     
     model = Sequential([
@@ -275,7 +284,7 @@ def _create_compatible_model() -> keras.Model:
     return model
 
 
-def _load_weights_from_keras_file(model: keras.Model, keras_path: Path):
+def _load_weights_from_keras_file(model, keras_path: Path):
     """Extract and load weights from a .keras file."""
     import zipfile
     import tempfile
@@ -553,8 +562,8 @@ async def analyze_image(file: UploadFile = File(...)):
 
     # Convert numpy types to Python native types for JSON serialization
     analysis = convert_numpy_types(analysis)
-
-    return {
+    
+    result = {
         **analysis,
         "stats": {k: float(v) for k, v in analysis["stats"].items()},
         "images": {
@@ -565,6 +574,11 @@ async def analyze_image(file: UploadFile = File(...)):
             "cancer_type": pil_to_base64(images["cancer_type_image"]),
         },
     }
+    
+    # Free memory after processing
+    gc.collect()
+    
+    return result
 
 
 @app.post("/report")
