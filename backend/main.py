@@ -204,7 +204,19 @@ app = FastAPI(
 
 # ----------------- MODEL LOADING (shared) -----------------
 BASE_DIR = Path(__file__).resolve().parent
-MODEL_PATH = Path(os.environ.get("MODEL_PATH", BASE_DIR / "models" / "breast_cancer_model.keras"))
+# Handle both local and Render paths
+MODEL_PATH_ENV = os.environ.get("MODEL_PATH")
+if MODEL_PATH_ENV:
+    MODEL_PATH = Path(MODEL_PATH_ENV)
+else:
+    # Try both paths: with and without 'backend' prefix
+    local_path = BASE_DIR / "models" / "breast_cancer_model.keras"
+    if local_path.exists():
+        MODEL_PATH = local_path
+    else:
+        # Fallback for when backend is root directory in Render
+        MODEL_PATH = Path("/opt/render/project/src/models/breast_cancer_model.keras")
+        
 _model: Optional[Any] = None  # Lazy loaded, so using Any instead of keras.Model
 
 
