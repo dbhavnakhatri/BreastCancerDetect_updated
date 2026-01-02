@@ -1,9 +1,9 @@
-# FastAPI Backend Dependencies (versions compatible with TensorFlow 2.13)
-fastapi==0.104.1
-uvicorn[standard]==0.24.0
+# FastAPI Backend Dependencies (older versions fully compatible with TensorFlow 2.13)
+fastapi==0.95.2
+uvicorn[standard]==0.22.0
 python-multipart==0.0.6
 typing-extensions==4.5.0
-pydantic==2.4.2
+pydantic==1.10.9
 
 # Image Processing (memory optimized)
 pillow==10.4.0
