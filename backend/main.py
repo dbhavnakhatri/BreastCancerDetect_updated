@@ -205,51 +205,30 @@ MODEL_PATH = Path(os.environ.get("MODEL_PATH", BASE_DIR / "models" / "breast_can
 _model: Optional[keras.Model] = None
 
 
-def download_model_if_missing():
-    """Download model from HF Hub if not present or corrupted (Git LFS issue)"""
+def check_model_exists():
+    """Check if model file exists"""
     if MODEL_PATH.exists():
         size_mb = MODEL_PATH.stat().st_size / (1024 * 1024)
-        if size_mb > 100:  # Valid model should be > 100 MB
+        if size_mb > 10:  # Valid model should be > 10 MB
             print(f"✅ Model exists ({size_mb:.1f} MB)")
             return True
         else:
-            print(f"⚠️ Model file too small ({size_mb:.1f} MB), re-downloading...")
-            MODEL_PATH.unlink()
+            print(f"⚠️ Model file too small ({size_mb:.1f} MB)")
+            return False
     
-    print("📥 Downloading model from Hugging Face Hub...")
-    
-    try:
-        from huggingface_hub import hf_hub_download
-        
-        # Ensure models directory exists
-        MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
-        
-        repo_id = os.environ.get("HF_MODEL_REPO", "Bhavanakhatri/breastcancerdetection")
-        
-        downloaded = hf_hub_download(
-            repo_id=repo_id,
-            filename="breast_cancer_model.keras",
-            local_dir=str(MODEL_PATH.parent),
-            local_dir_use_symlinks=False
-        )
-        
-        print(f"✅ Model downloaded: {downloaded}")
-        return True
-        
-    except Exception as e:
-        print(f"❌ Model download failed: {e}")
-        return False
+    print(f"❌ Model file not found at {MODEL_PATH}")
+    return False
 
 
 def get_model() -> keras.Model:
     """Model sirf ek baar load karo, baar-baar reuse karein."""
     global _model
     if _model is None:
-        # Auto-download if missing or corrupted
-        if not download_model_if_missing():
+        # Check if model exists
+        if not check_model_exists():
             raise RuntimeError(
-                f"Model file not found at {MODEL_PATH} and download failed. "
-                "Please upload model manually or set HF_MODEL_REPO."
+                f"Model file not found at {MODEL_PATH}. "
+                "Please ensure model file is in the repository."
             )
         
         try:
