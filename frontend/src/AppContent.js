@@ -58,9 +58,59 @@ function AppContent() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [fullscreenIndex, setFullscreenIndex] = useState(0);
   const [isZoomed, setIsZoomed] = useState(false);
+  const [uploadHistory, setUploadHistory] = useState([]);
 
   // Zoom functionality
   const zoomImageRef = useRef(null);
+
+  // Load upload history from localStorage on mount
+  useEffect(() => {
+    const savedHistory = localStorage.getItem('uploadHistory');
+    if (savedHistory) {
+      try {
+        setUploadHistory(JSON.parse(savedHistory));
+      } catch (e) {
+        console.error('Error loading upload history:', e);
+      }
+    }
+  }, []);
+
+  // Save upload history to localStorage
+  const saveToHistory = (fileName, fileData) => {
+    const newEntry = {
+      id: Date.now(),
+      name: fileName,
+      data: fileData,
+      timestamp: new Date().toISOString()
+    };
+    
+    setUploadHistory(prev => {
+      // Keep only last 5 entries
+      const updated = [newEntry, ...prev.filter(h => h.name !== fileName)].slice(0, 5);
+      localStorage.setItem('uploadHistory', JSON.stringify(updated));
+      return updated;
+    });
+  };
+
+  // Remove from history
+  const removeFromHistory = (id) => {
+    setUploadHistory(prev => {
+      const updated = prev.filter(h => h.id !== id);
+      localStorage.setItem('uploadHistory', JSON.stringify(updated));
+      return updated;
+    });
+  };
+
+  // Re-upload from history
+  const uploadFromHistory = (historyItem) => {
+    // Convert base64 back to file
+    fetch(historyItem.data)
+      .then(res => res.blob())
+      .then(blob => {
+        const file = new File([blob], historyItem.name, { type: blob.type });
+        setFile(file);
+      });
+  };
 
   // Reset zoom when visual tab changes
   useEffect(() => {
@@ -130,6 +180,13 @@ function AppContent() {
     if (e.target.files && e.target.files[0]) {
       const selectedFile = e.target.files[0];
       setFile(selectedFile);
+      
+      // Save to history
+      const reader = new FileReader();
+      reader.onload = () => {
+        saveToHistory(selectedFile.name, reader.result);
+      };
+      reader.readAsDataURL(selectedFile);
       
       // Extract view code from filename immediately for real-time display
       const viewCode = extractViewCodeFromFilename(selectedFile.name);
@@ -488,6 +545,45 @@ function AppContent() {
                 Selected File: <strong>{file.name}</strong>
               </p>
             )}
+
+            {/* Upload History Section */}
+            {uploadHistory.length > 0 && !file && (
+              <div className="upload-history">
+                <p className="history-title">Recent Uploads</p>
+                <div className="history-list">
+                  {uploadHistory.map((item) => (
+                    <div key={item.id} className="history-item">
+                      <span className="history-name" title={item.name}>
+                        📄 {item.name.length > 25 ? item.name.substring(0, 22) + '...' : item.name}
+                      </span>
+                      <div className="history-actions">
+                        <button
+                          className="history-btn history-upload-btn"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            uploadFromHistory(item);
+                          }}
+                          title="Re-upload this file"
+                        >
+                          Upload
+                        </button>
+                        <button
+                          className="history-btn history-delete-btn"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            removeFromHistory(item.id);
+                          }}
+                          title="Remove from history"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {statusMessage && (
               <p className="muted small" style={{ marginTop: "10px" }}>
                 {statusMessage}
