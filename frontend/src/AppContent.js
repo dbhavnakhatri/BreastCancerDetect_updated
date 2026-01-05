@@ -12,8 +12,8 @@ const getDefaultApiBase = () => {
   if (typeof window !== "undefined") {
     const localHosts = ["localhost", "127.0.0.1", "0.0.0.0"];
     if (localHosts.includes(window.location.hostname)) {
-      console.log("Auto-detected local environment - Using backend: http://localhost:8000");
-      return "http://localhost:8000";
+      console.log("Auto-detected local environment - Using backend: http://localhost:8001");
+      return "http://localhost:8001";
     }
   }
 
