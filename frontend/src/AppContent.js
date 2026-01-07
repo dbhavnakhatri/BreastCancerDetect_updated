@@ -3,7 +3,7 @@
 
 import React, { useMemo, useState, useRef, useEffect } from "react";
 import "./App.css";
-import { FiUploadCloud, FiLogOut, FiChevronLeft, FiChevronRight, FiX } from "react-icons/fi";
+import { FiUploadCloud, FiLogOut } from "react-icons/fi";
 import { useAuth } from "./context/AuthContext";
 import { useNavigate } from "react-router-dom";
 
@@ -55,8 +55,6 @@ function AppContent() {
   const [isGeneratingReport, setIsGeneratingReport] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const [fullscreenIndex, setFullscreenIndex] = useState(0);
   const [isZoomed, setIsZoomed] = useState(false);
   const [uploadHistory, setUploadHistory] = useState([]);
 
@@ -128,6 +126,7 @@ function AppContent() {
     }
   }, [visualTab]);
 
+
   const handleMouseMove = (e) => {
     if (!isZoomed) return;
     const img = zoomImageRef.current;
@@ -160,22 +159,6 @@ function AppContent() {
     }
   };
 
-  const fullscreenImages = [
-    { src: results.overlay, label: "Heatmap Overlay" },
-    { src: results.heatmap, label: "Heatmap Only" },
-    { src: results.bbox, label: "Region Detection" },
-    { src: results.original, label: "Type of Cancer detection" }
-  ];
-
-  const handleFullscreenPrev = (e) => {
-    e.stopPropagation();
-    setFullscreenIndex((prev) => (prev === 0 ? fullscreenImages.length - 1 : prev - 1));
-  };
-
-  const handleFullscreenNext = (e) => {
-    e.stopPropagation();
-    setFullscreenIndex((prev) => (prev === fullscreenImages.length - 1 ? 0 : prev + 1));
-  };
 
   const handleLogout = () => {
     logout();
@@ -759,63 +742,11 @@ function AppContent() {
                         />
 
                       </div>
-                      <button
-                        className="fullscreen-btn"
-                        onClick={() => {
-                          const tabIndex = visualTab === "overlay" ? 0 : visualTab === "heatmap" ? 1 : visualTab === "bbox" ? 2 : 3;
-                          setFullscreenIndex(tabIndex);
-                          setIsFullscreen(true);
-                        }}
-                        title="View Fullscreen"
-                      >
-                        ⛶
-                      </button>
                     </>
                   ) : (
                     <p className="muted small">Image not available.</p>
                   )}
                 </div>
-
-                {/* Fullscreen Modal with Slider */}
-                {isFullscreen && (
-                  <div className="fullscreen-overlay" onClick={() => setIsFullscreen(false)}>
-                    <div className="fullscreen-content" onClick={(e) => e.stopPropagation()}>
-                      <button
-                        className="fullscreen-close-btn"
-                        onClick={() => setIsFullscreen(false)}
-                      >
-                        <FiX size={28} />
-                      </button>
-
-                      {/* Left Arrow */}
-                      <button className="fullscreen-nav-btn fullscreen-nav-left" onClick={handleFullscreenPrev}>
-                        <FiChevronLeft size={40} />
-                      </button>
-
-                      {/* Image */}
-                      <div className="fullscreen-image-container">
-                        <img src={fullscreenImages[fullscreenIndex]?.src} alt="Visual analysis fullscreen" />
-                        <p className="fullscreen-label">{fullscreenImages[fullscreenIndex]?.label}</p>
-                      </div>
-
-                      {/* Right Arrow */}
-                      <button className="fullscreen-nav-btn fullscreen-nav-right" onClick={handleFullscreenNext}>
-                        <FiChevronRight size={40} />
-                      </button>
-
-                      {/* Dots Indicator */}
-                      <div className="fullscreen-dots">
-                        {fullscreenImages.map((_, idx) => (
-                          <span
-                            key={idx}
-                            className={`fullscreen-dot ${idx === fullscreenIndex ? 'active' : ''}`}
-                            onClick={(e) => { e.stopPropagation(); setFullscreenIndex(idx); }}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                )}
 
 
                 {/* Detailed Analysis Information */}

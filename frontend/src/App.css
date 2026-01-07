@@ -19,6 +19,10 @@ html,
   -moz-osx-font-smoothing: grayscale;
 }
 
+body.fullscreen-open {
+  overflow: hidden;
+}
+
 /* ========= BACKGROUND VIDEO ========= */
 #bg-video {
   position: fixed;
@@ -2238,14 +2242,16 @@ html,
   position: fixed;
   top: 0;
   left: 0;
-  width: 100vw;
-  height: 100vh;
-  background: rgba(0, 0, 0, 0.95);
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(135deg, rgba(30, 30, 50, 0.9) 0%, rgba(50, 30, 60, 0.9) 100%);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 9999;
   animation: fadeIn 0.3s ease;
+  overflow: hidden !important;
+  backdrop-filter: blur(8px);
 }
 
 @keyframes fadeIn {
@@ -2255,12 +2261,17 @@ html,
 
 .fullscreen-content {
   position: relative;
-  width: 100vw;
-  height: 100vh;
+  width: 95%;
+  height: 95%;
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.95) 0%, rgba(245, 245, 250, 0.95) 100%);
+  border-radius: 20px;
+  padding: 0;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3), 0 0 40px rgba(236, 72, 153, 0.2);
+  border: 2px solid rgba(236, 72, 153, 0.3);
 }
 
 .fullscreen-close-btn {
@@ -2269,8 +2280,8 @@ html,
   right: 20px;
   width: 50px;
   height: 50px;
-  background: rgba(0, 0, 0, 0.7);
-  border: 2px solid rgba(255, 255, 255, 0.5);
+  background: linear-gradient(135deg, #ec4899 0%, #db2777 100%);
+  border: 2px solid white;
   border-radius: 50%;
   color: white;
   font-size: 28px;
@@ -2279,13 +2290,14 @@ html,
   align-items: center;
   justify-content: center;
   transition: all 0.3s ease;
-  z-index: 10000;
+  z-index: 10001;
+  box-shadow: 0 4px 15px rgba(236, 72, 153, 0.4);
 }
 
 .fullscreen-close-btn:hover {
-  background: #ec4899;
-  border-color: #ec4899;
-  transform: scale(1.1);
+  background: linear-gradient(135deg, #db2777 0%, #c91f6f 100%);
+  transform: scale(1.15);
+  box-shadow: 0 6px 20px rgba(236, 72, 153, 0.6);
 }
 
 /* Fullscreen Slider Navigation */
@@ -2295,8 +2307,8 @@ html,
   transform: translateY(-50%);
   width: 60px;
   height: 60px;
-  background: rgba(0, 0, 0, 0.6);
-  border: 2px solid rgba(255, 255, 255, 0.4);
+  background: linear-gradient(135deg, rgba(236, 72, 153, 0.9) 0%, rgba(219, 39, 119, 0.9) 100%);
+  border: 2px solid white;
   border-radius: 50%;
   color: white;
   cursor: pointer;
@@ -2326,15 +2338,15 @@ html,
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  width: calc(100% - 200px);
+  width: 100%;
   height: 100%;
-  max-width: 90vw;
-  max-height: 90vh;
+  max-width: 100%;
+  max-height: 100%;
 }
 
 .fullscreen-image-container img {
-  max-width: 100%;
-  max-height: calc(100vh - 120px);
+  max-width: 95%;
+  max-height: 95%;
   width: auto;
   height: auto;
   object-fit: contain;
