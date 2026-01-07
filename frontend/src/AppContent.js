@@ -103,12 +103,18 @@ function AppContent() {
 
   // Re-upload from history
   const uploadFromHistory = (historyItem) => {
-    // Convert base64 back to file
+    // Convert base64 back to file and analyze
     fetch(historyItem.data)
       .then(res => res.blob())
       .then(blob => {
-        const file = new File([blob], historyItem.name, { type: blob.type });
+        const file = new File([blob], historyItem.name, { type: blob.type || 'image/jpeg' });
         setFile(file);
+        // Automatically start analysis
+        analyzeFile(file);
+      })
+      .catch(err => {
+        console.error('Error loading from history:', err);
+        setErrorMessage('Failed to load image from history');
       });
   };
 
