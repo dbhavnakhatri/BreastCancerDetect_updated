@@ -294,7 +294,7 @@ def generate_report_pdf(
         ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
         ('LEFTPADDING', (0, 0), (-1, -1), 6),
         ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
-        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor("#F5F5F5")),
+        
     ]))
     
     story.append(ai_table)
@@ -345,7 +345,7 @@ def generate_report_pdf(
             ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
             ('LEFTPADDING', (0, 0), (-1, -1), 6),
             ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#E8E8E8")),
+            
             ('FONTSIZE', (0, 0), (-1, -1), 9),
         ]))
         
@@ -400,7 +400,7 @@ def generate_report_pdf(
                 ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
                 ('LEFTPADDING', (0, 0), (-1, -1), 4),
                 ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#E8E8E8")),
+                
                 ('FONTSIZE', (0, 0), (-1, -1), 8),
             ]))
             
@@ -457,7 +457,7 @@ def generate_report_pdf(
                     ('LEFTPADDING', (0, 0), (-1, -1), 4),
                     ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
                     ('FONTSIZE', (0, 0), (-1, -1), 8),
-                    ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor("#FAFAFA")),
+                    
                 ]))
                 
                 story.append(lesion_table)
@@ -496,7 +496,7 @@ def generate_report_pdf(
                     ('LEFTPADDING', (0, 0), (-1, -1), 6),
                     ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
                     ('FONTSIZE', (0, 0), (-1, -1), 9),
-                    ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor("#E3F2FD")),
+                    
                 ]))
                 story.append(density_table)
                 story.append(Spacer(1, 12))
@@ -660,7 +660,7 @@ def generate_report_pdf(
                     ('LEFTPADDING', (0, 0), (-1, -1), 6),
                     ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
                     ('FONTSIZE', (0, 0), (-1, -1), 9),
-                    ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor("#FFF3E0")),
+                    
                 ]))
                 story.append(calc_table)
                 story.append(Spacer(1, 12))
@@ -686,7 +686,7 @@ def generate_report_pdf(
                     ('LEFTPADDING', (0, 0), (-1, -1), 6),
                     ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
                     ('FONTSIZE', (0, 0), (-1, -1), 9),
-                    ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor("#E8F5E9")),
+                    
                 ]))
                 story.append(quality_table)
                 story.append(Spacer(1, 12))
@@ -730,7 +730,7 @@ def generate_report_pdf(
                 ('LEFTPADDING', (0, 0), (-1, -1), 6),
                 ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
                 ('FONTSIZE', (0, 0), (-1, -1), 9),
-                ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor("#F0F8FF")),
+                
             ]))
             story.append(cc_table)
             story.append(Spacer(1, 10))
@@ -762,7 +762,7 @@ def generate_report_pdf(
                 ('LEFTPADDING', (0, 0), (-1, -1), 6),
                 ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
                 ('FONTSIZE', (0, 0), (-1, -1), 9),
-                ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor("#FFF8F0")),
+                
             ]))
             story.append(mlo_table)
             story.append(Spacer(1, 10))
@@ -977,7 +977,7 @@ def generate_report_pdf(
     disclaimer_box.setStyle(
         TableStyle(
             [
-                ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor("#FFF3E0")),
+                
                 ('BOX', (0, 0), (-1, -1), 1.5, colors.HexColor("#E65100")),
                 ('TOPPADDING', (0, 0), (-1, -1), 10),
                 ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
