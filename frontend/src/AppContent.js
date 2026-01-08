@@ -3,7 +3,7 @@
 
 import React, { useMemo, useState, useRef, useEffect } from "react";
 import "./App.css";
-import { FiUploadCloud, FiLogOut } from "react-icons/fi";
+import { FiUploadCloud, FiLogOut, FiDownload } from "react-icons/fi";
 import { useAuth } from "./context/AuthContext";
 import { useNavigate } from "react-router-dom";
 
@@ -426,6 +426,43 @@ function AppContent() {
     }
   };
 
+  const handleDownloadImage = () => {
+    const imageUrl = getActiveVisualImage();
+    if (!imageUrl) {
+      setErrorMessage("No image available to download");
+      return;
+    }
+
+    const link = document.createElement("a");
+    link.href = imageUrl;
+    
+    // Determine filename based on active tab
+    let filename = "mammogram_analysis";
+    switch (visualTab) {
+      case "heatmap":
+        filename = "mammogram_heatmap.png";
+        break;
+      case "bbox":
+        filename = "region_detection.png";
+        break;
+      case "original":
+        filename = "type_of_cancer_detection.png";
+        break;
+      case "overlay":
+      default:
+        filename = "mammogram_overlay.png";
+        break;
+    }
+    
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    setStatusMessage(`Downloaded: ${filename}`);
+    setTimeout(() => setStatusMessage(""), 3000);
+  };
+
   const getActiveVisualImage = () => {
     switch (visualTab) {
       case "heatmap":
@@ -734,6 +771,7 @@ function AppContent() {
                             </div>
                           </div>
                         )}
+                        
                         <img
                           ref={zoomImageRef}
                           src={getActiveVisualImage()}
@@ -742,6 +780,46 @@ function AppContent() {
                         />
 
                       </div>
+                      
+                      {/* Download Icon Button - Outside zoom container to prevent zoom on click */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDownloadImage();
+                        }}
+                        style={{
+                          position: 'absolute',
+                          bottom: '12px',
+                          right: '12px',
+                          background: 'linear-gradient(135deg, rgba(174, 112, 175, 0.9) 0%, rgba(156, 39, 176, 0.9) 100%)',
+                          border: '2px solid rgba(255, 255, 255, 0.3)',
+                          color: 'white',
+                          padding: '10px 14px',
+                          borderRadius: '8px',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          fontSize: '0.9rem',
+                          fontWeight: '600',
+                          zIndex: 11,
+                          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+                          backdropFilter: 'blur(10px)',
+                          transition: 'all 0.3s ease'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.target.style.background = 'linear-gradient(135deg, rgba(186, 104, 200, 1) 0%, rgba(171, 71, 188, 1) 100%)';
+                          e.target.style.transform = 'scale(1.05)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.target.style.background = 'linear-gradient(135deg, rgba(174, 112, 175, 0.9) 0%, rgba(156, 39, 176, 0.9) 100%)';
+                          e.target.style.transform = 'scale(1)';
+                        }}
+                        title="Download image"
+                      >
+                        <FiDownload size={18} />
+                        Download
+                      </button>
                     </>
                   ) : (
                     <p className="muted small">Image not available.</p>
