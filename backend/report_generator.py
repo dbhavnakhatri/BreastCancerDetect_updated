@@ -1024,3 +1024,349 @@ def generate_report_pdf(
     doc.build(story)
     buffer.seek(0)
     return buffer.getvalue()
+
+
+# =============================
+#  COMPARISON REPORT GENERATOR
+# =============================
+def generate_comparison_report_pdf(
+    # Image 1 parameters
+    result1, probability1, risk_level1, benign_prob1, malignant_prob1, stats1, image_size1, file_format1,
+    original_image1, overlay_image1, heatmap_only1, bbox_image1, cancer_type_image1, confidence1, findings1, view_analysis1,
+    
+    # Image 2 parameters
+    result2, probability2, risk_level2, benign_prob2, malignant_prob2, stats2, image_size2, file_format2,
+    original_image2, overlay_image2, heatmap_only2, bbox_image2, cancer_type_image2, confidence2, findings2, view_analysis2,
+    
+    # Patient info
+    patient_name="Patient Name",
+    patient_age="N/A",
+    patient_sex="Female",
+    patient_hn="N/A",
+    department="Radiology",
+    request_doctor="Dr. [Name]",
+    report_by="Dr. [Radiologist Name]",
+):
+    """
+    Generate side-by-side comparison PDF report for two mammogram images
+    """
+    
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=letter,
+        topMargin=0.5 * inch,
+        bottomMargin=0.5 * inch,
+        leftMargin=0.75 * inch,
+        rightMargin=0.75 * inch,
+    )
+
+    story = []
+    styles = getSampleStyleSheet()
+
+    # -------------------------
+    # CUSTOM STYLES
+    # -------------------------
+    title_style = ParagraphStyle(
+        'Title',
+        parent=styles['Heading1'],
+        fontSize=16,
+        fontName='Helvetica-Bold',
+        textColor=colors.black,
+        alignment=TA_CENTER,
+        spaceAfter=6,
+    )
+
+    subtitle_style = ParagraphStyle(
+        'Subtitle',
+        parent=styles['Normal'],
+        fontSize=12,
+        fontName='Helvetica-Bold',
+        textColor=colors.black,
+        alignment=TA_CENTER,
+        spaceAfter=12,
+    )
+
+    heading_style = ParagraphStyle(
+        'Heading',
+        parent=styles['Heading2'],
+        fontSize=11,
+        fontName='Helvetica-Bold',
+        textColor=colors.black,
+        spaceBefore=10,
+        spaceAfter=8,
+    )
+
+    subheading_style = ParagraphStyle(
+        'SubHeading',
+        parent=styles['Heading3'],
+        fontSize=10,
+        fontName='Helvetica-Bold',
+        textColor=colors.black,
+        spaceAfter=6,
+    )
+
+    normal_style = ParagraphStyle(
+        'NormalText',
+        parent=styles['Normal'],
+        fontSize=10,
+        fontName='Helvetica',
+        alignment=TA_LEFT,
+        spaceAfter=4,
+    )
+
+    # ----------------------------------------
+    # Helper: Convert PIL → ReportLab Image
+    # ----------------------------------------
+    def pil_to_rl_image(img, max_w=3.2 * inch, max_h=2.5 * inch):
+        if img is None:
+            return None
+        if isinstance(img, np.ndarray):
+            img = Image.fromarray(img.astype('uint8'))
+
+        buf = io.BytesIO()
+        img.save(buf, format='PNG')
+        buf.seek(0)
+
+        rl_img = RLImage(buf)
+
+        w, h = img.size
+        aspect = w / h
+
+        if aspect > (max_w / max_h):
+            rl_img.drawWidth = max_w
+            rl_img.drawHeight = max_w / aspect
+        else:
+            rl_img.drawHeight = max_h
+            rl_img.drawWidth = max_h * aspect
+
+        return rl_img
+
+    # ============================
+    #  HEADER
+    # ============================
+    story.append(Paragraph("MAMMOGRAPHY COMPARISON REPORT", title_style))
+    story.append(Spacer(1, 2))
+    story.append(Paragraph("Side-by-Side Analysis: Image 1 vs Image 2", subtitle_style))
+    story.append(Spacer(1, 6))
+    
+    # Patient Information
+    current_date = datetime.now().strftime('%B %d, %Y')
+    current_time = datetime.now().strftime('%I:%M %p')
+    
+    patient_info_data = [
+        [Paragraph('<b>Date:</b>', normal_style), current_date, Paragraph('<b>Time:</b>', normal_style), current_time],
+        [Paragraph('<b>Name:</b>', normal_style), patient_name, Paragraph('<b>Age:</b>', normal_style), patient_age],
+        [Paragraph('<b>Sex:</b>', normal_style), patient_sex, Paragraph('<b>HN:</b>', normal_style), patient_hn],
+    ]
+    
+    patient_table = Table(patient_info_data, colWidths=[1.2*inch, 2.1*inch, 0.8*inch, 2.6*inch])
+    patient_table.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('TOPPADDING', (0, 0), (-1, -1), 4),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ('LEFTPADDING', (0, 0), (-1, -1), 6),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black),
+    ]))
+    
+    story.append(patient_table)
+    story.append(Spacer(1, 12))
+
+    # ============================
+    # SIDE-BY-SIDE COMPARISON
+    # ============================
+    story.append(Paragraph('<b>SIDE-BY-SIDE COMPARISON</b>', heading_style))
+    story.append(Spacer(1, 10))
+
+    # Create side-by-side comparison table
+    comparison_data = [
+        [
+            Paragraph('<b>IMAGE 1</b>', subheading_style),
+            Paragraph('<b>IMAGE 2</b>', subheading_style),
+        ],
+        [
+            Paragraph(f'<b>Result:</b> {result1}', normal_style),
+            Paragraph(f'<b>Result:</b> {result2}', normal_style),
+        ],
+        [
+            Paragraph(f'<b>Risk Level:</b> {risk_level1}', normal_style),
+            Paragraph(f'<b>Risk Level:</b> {risk_level2}', normal_style),
+        ],
+        [
+            Paragraph(f'<b>Benign:</b> {benign_prob1:.2f}%<br/><b>Malignant:</b> {malignant_prob1:.2f}%<br/><b>Confidence:</b> {confidence1:.2f}%', normal_style),
+            Paragraph(f'<b>Benign:</b> {benign_prob2:.2f}%<br/><b>Malignant:</b> {malignant_prob2:.2f}%<br/><b>Confidence:</b> {confidence2:.2f}%', normal_style),
+        ],
+    ]
+
+    # Add images if available
+    img1 = pil_to_rl_image(overlay_image1, max_w=3.0*inch, max_h=2.3*inch)
+    img2 = pil_to_rl_image(overlay_image2, max_w=3.0*inch, max_h=2.3*inch)
+    
+    if img1 or img2:
+        comparison_data.append([img1 or Paragraph('Image not available', normal_style), img2 or Paragraph('Image not available', normal_style)])
+
+    # Add AI Summary
+    summary1 = findings1.get('summary', 'N/A') if findings1 else 'N/A'
+    summary2 = findings2.get('summary', 'N/A') if findings2 else 'N/A'
+    
+    comparison_data.append([
+        Paragraph(f'<b>AI Summary:</b><br/>{summary1}', normal_style),
+        Paragraph(f'<b>AI Summary:</b><br/>{summary2}', normal_style),
+    ])
+
+    comparison_table = Table(comparison_data, colWidths=[3.5*inch, 3.5*inch])
+    comparison_table.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ('LEFTPADDING', (0, 0), (-1, -1), 6),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+        ('GRID', (0, 0), (-1, -1), 1, colors.grey),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#E8E8E8')),
+    ]))
+
+    story.append(comparison_table)
+    story.append(Spacer(1, 20))
+
+    # ============================
+    # DETAILED ANALYSIS FOR EACH IMAGE
+    # ============================
+    story.append(PageBreak())
+    story.append(Paragraph('<b>DETAILED ANALYSIS - IMAGE 1</b>', heading_style))
+    story.append(Spacer(1, 10))
+
+    # Image 1 detailed info
+    image1_details = [
+        ['Classification:', result1],
+        ['Confidence Score:', f"{probability1:.2f}%"],
+        ['Benign Probability:', f"{benign_prob1:.2f}%"],
+        ['Malignant Probability:', f"{malignant_prob1:.2f}%"],
+        ['Risk Assessment:', risk_level1],
+        ['Image Size:', f"{image_size1[0]} x {image_size1[1]} pixels"],
+        ['File Format:', file_format1],
+    ]
+
+    image1_table = Table(image1_details, colWidths=[1.8*inch, 4.9*inch])
+    image1_table.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('TOPPADDING', (0, 0), (-1, -1), 4),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ('LEFTPADDING', (0, 0), (-1, -1), 6),
+        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+    ]))
+
+    story.append(image1_table)
+    story.append(Spacer(1, 12))
+
+    # Image 1 findings
+    if findings1 and findings1.get('regions'):
+        story.append(Paragraph('<b>Detected Regions - Image 1</b>', subheading_style))
+        story.append(Spacer(1, 6))
+        
+        regions1_header = [[
+            Paragraph('<b>Region</b>', normal_style),
+            Paragraph('<b>Type</b>', normal_style),
+            Paragraph('<b>Confidence</b>', normal_style),
+            Paragraph('<b>Severity</b>', normal_style),
+        ]]
+        
+        regions1_data = []
+        for region in findings1['regions']:
+            regions1_data.append([
+                f"#{region.get('id', '?')}",
+                region.get('cancer_type', 'Unknown'),
+                f"{region.get('confidence', 0):.1f}%",
+                region.get('severity', 'low'),
+            ])
+        
+        regions1_table_data = regions1_header + regions1_data
+        regions1_table = Table(regions1_table_data, colWidths=[0.8*inch, 2.0*inch, 1.2*inch, 1.2*inch])
+        regions1_table.setStyle(TableStyle([
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('TOPPADDING', (0, 0), (-1, -1), 3),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+            ('LEFTPADDING', (0, 0), (-1, -1), 4),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('FONTSIZE', (0, 0), (-1, -1), 8),
+        ]))
+        
+        story.append(regions1_table)
+        story.append(Spacer(1, 12))
+
+    # ============================
+    # IMAGE 2 DETAILED ANALYSIS
+    # ============================
+    story.append(PageBreak())
+    story.append(Paragraph('<b>DETAILED ANALYSIS - IMAGE 2</b>', heading_style))
+    story.append(Spacer(1, 10))
+
+    # Image 2 detailed info
+    image2_details = [
+        ['Classification:', result2],
+        ['Confidence Score:', f"{probability2:.2f}%"],
+        ['Benign Probability:', f"{benign_prob2:.2f}%"],
+        ['Malignant Probability:', f"{malignant_prob2:.2f}%"],
+        ['Risk Assessment:', risk_level2],
+        ['Image Size:', f"{image_size2[0]} x {image_size2[1]} pixels"],
+        ['File Format:', file_format2],
+    ]
+
+    image2_table = Table(image2_details, colWidths=[1.8*inch, 4.9*inch])
+    image2_table.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('TOPPADDING', (0, 0), (-1, -1), 4),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ('LEFTPADDING', (0, 0), (-1, -1), 6),
+        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+    ]))
+
+    story.append(image2_table)
+    story.append(Spacer(1, 12))
+
+    # Image 2 findings
+    if findings2 and findings2.get('regions'):
+        story.append(Paragraph('<b>Detected Regions - Image 2</b>', subheading_style))
+        story.append(Spacer(1, 6))
+        
+        regions2_header = [[
+            Paragraph('<b>Region</b>', normal_style),
+            Paragraph('<b>Type</b>', normal_style),
+            Paragraph('<b>Confidence</b>', normal_style),
+            Paragraph('<b>Severity</b>', normal_style),
+        ]]
+        
+        regions2_data = []
+        for region in findings2['regions']:
+            regions2_data.append([
+                f"#{region.get('id', '?')}",
+                region.get('cancer_type', 'Unknown'),
+                f"{region.get('confidence', 0):.1f}%",
+                region.get('severity', 'low'),
+            ])
+        
+        regions2_table_data = regions2_header + regions2_data
+        regions2_table = Table(regions2_table_data, colWidths=[0.8*inch, 2.0*inch, 1.2*inch, 1.2*inch])
+        regions2_table.setStyle(TableStyle([
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('TOPPADDING', (0, 0), (-1, -1), 3),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+            ('LEFTPADDING', (0, 0), (-1, -1), 4),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('FONTSIZE', (0, 0), (-1, -1), 8),
+        ]))
+        
+        story.append(regions2_table)
+        story.append(Spacer(1, 12))
+
+    # ============================
+    # FINAL BUILD
+    # ============================
+    doc.build(story)
+    buffer.seek(0)
+    return buffer.getvalue()

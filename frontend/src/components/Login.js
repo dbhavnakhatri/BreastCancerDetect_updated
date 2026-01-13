@@ -7,10 +7,11 @@ function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
   const { login } = useAuth();
   const navigate = useNavigate();
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
 
@@ -19,7 +20,10 @@ function Login() {
       return;
     }
 
-    const result = login(email, password);
+    setLoading(true);
+    const result = await login(email, password);
+    setLoading(false);
+
     if (result.success) {
       navigate('/');
     } else {
@@ -36,7 +40,7 @@ function Login() {
 
       <div className="auth-card">
         <div className="auth-header">
-          <h1>Welcome Back</h1>
+          <h1>Welcome Back User</h1>
           <p>Login to access Breast Cancer Detection</p>
         </div>
 
@@ -52,6 +56,7 @@ function Login() {
               onChange={(e) => setEmail(e.target.value)}
               placeholder="Enter your email"
               autoComplete="email"
+              disabled={loading}
             />
           </div>
 
@@ -64,11 +69,12 @@ function Login() {
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Enter your password"
               autoComplete="current-password"
+              disabled={loading}
             />
           </div>
 
-          <button type="submit" className="auth-button">
-            Login
+          <button type="submit" className="auth-button" disabled={loading}>
+            {loading ? 'Logging in...' : 'Login'}
           </button>
 
           <div className="auth-footer">
@@ -86,4 +92,3 @@ function Login() {
 }
 
 export default Login;
-
