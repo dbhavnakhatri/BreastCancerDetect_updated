@@ -6,6 +6,7 @@ import "./App.css";
 import { FiUploadCloud, FiLogOut, FiDownload } from "react-icons/fi";
 import { useAuth } from "./context/AuthContext";
 import { useNavigate } from "react-router-dom";
+import FullComparisonView from "./components/FullComparisonView";
 
 const getDefaultApiBase = () => {
   // Auto-detect: Use local backend when running on localhost
@@ -47,8 +48,11 @@ function AppContent() {
 
   const [results, setResults] = useState({});
   const [file, setFile] = useState(null);
+  const [secondFile, setSecondFile] = useState(null);
+  const [secondResults, setSecondResults] = useState(null);
   const [dragActive, setDragActive] = useState(false);
   const [analysisDone, setAnalysisDone] = useState(false);
+  const [showComparison, setShowComparison] = useState(false);
   const [visualTab, setVisualTab] = useState("overlay");
   const [detailsTab, setDetailsTab] = useState("clinical");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -176,23 +180,20 @@ function AppContent() {
         saveToHistory(selectedFile.name, reader.result);
       };
       reader.readAsDataURL(selectedFile);
+    }
+  };
+
+  const handleSecondFileChange = (e) => {
+    if (e.target.files && e.target.files[0]) {
+      const selectedFile = e.target.files[0];
+      setSecondFile(selectedFile);
       
-      // Extract view code from filename immediately for real-time display
-      const viewCode = extractViewCodeFromFilename(selectedFile.name);
-      if (viewCode) {
-        setResults(prev => ({
-          ...prev,
-          view_analysis: {
-            view_code: viewCode,
-            laterality: viewCode.includes('L') && !viewCode.includes('R') ? 'Left' : 'Right',
-            laterality_code: viewCode.includes('L') && !viewCode.includes('R') ? 'L' : 'R',
-            image_quality: 'Analyzing...',
-            quality_score: null,
-          }
-        }));
-      }
-      
-      analyzeFile(selectedFile);
+      // Save to history
+      const reader = new FileReader();
+      reader.onload = () => {
+        saveToHistory(selectedFile.name, reader.result);
+      };
+      reader.readAsDataURL(selectedFile);
     }
   };
   
@@ -365,6 +366,94 @@ function AppContent() {
     }
   };
 
+  const analyzeSecondFile = async (selectedFile) => {
+    if (!selectedFile) return;
+    const formData = new FormData();
+    formData.append("file", selectedFile);
+
+    setIsAnalyzing(true);
+    setStatusMessage("Uploading second image for analysis…");
+    setErrorMessage("");
+
+    const endpoint = "/analyze";
+    const currentApiUrl = apiUrl(endpoint);
+    console.log("Sending request to:", currentApiUrl);
+
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 120000);
+
+      const response = await fetch(currentApiUrl, {
+        method: "POST",
+        body: formData,
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const errorBody = await response.json().catch(() => ({}));
+        console.error("API Error:", response.status, errorBody);
+        throw new Error(errorBody.detail || `Server error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      const images = data.images || {};
+      const confidencePercent =
+        data.confidence !== undefined && data.confidence <= 1
+          ? data.confidence * 100
+          : data.confidence ?? null;
+
+      const resultData = {
+        original: asDataUrl(images.original),
+        overlay: asDataUrl(images.overlay),
+        heatmap: asDataUrl(images.heatmap_only),
+        bbox: asDataUrl(images.bbox),
+        cancer_type: asDataUrl(images.cancer_type),
+        malignant: data.malignant_prob ?? null,
+        benign: data.benign_prob ?? null,
+        risk: data.risk_level ?? "Unavailable",
+        riskIcon: data.risk_icon,
+        riskColor: data.risk_color,
+        result: data.result ?? "Analysis Result",
+        confidence: confidencePercent,
+        rawScore: data.confidence ?? null,
+        threshold: data.threshold ?? 0.5,
+        stats: data.stats || {},
+        findings: data.findings || null,
+        view_analysis: data.view_analysis || null,
+      };
+
+      console.log("Second Image Analysis Results:", {
+        result: resultData.result,
+        riskLevel: resultData.risk,
+        malignantProb: resultData.malignant,
+        benignProb: resultData.benign,
+        confidence: resultData.confidence
+      });
+
+      setSecondResults(resultData);
+      setStatusMessage("Second image analysis complete.");
+    } catch (error) {
+      console.error("Analysis error:", error);
+
+      let errorMsg = "Backend not reachable.";
+
+      if (error.name === 'AbortError') {
+        errorMsg = "Request timed out. Please try again.";
+      } else if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+        errorMsg = `Cannot connect to backend at ${apiBase}. Please check if the backend is running and CORS is enabled.`;
+      } else if (error.message) {
+        errorMsg = error.message;
+      }
+
+      setErrorMessage(errorMsg);
+      setStatusMessage("");
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
   const handleDownloadReport = async () => {
     console.log("🔵 Download Report button clicked!");
     
@@ -426,6 +515,129 @@ function AppContent() {
     }
   };
 
+  const handleDownloadComparisonReport = async () => {
+    console.log("🔵 Download Comparison Report button clicked!");
+    
+    if (!file || !secondFile) {
+      console.error("❌ Missing files!");
+      setErrorMessage("Please upload both files before requesting the comparison report.");
+      return;
+    }
+
+    console.log("✅ Files found:", file.name, secondFile.name);
+    const formData = new FormData();
+    formData.append("file1", file);
+    formData.append("file2", secondFile);
+    
+    setIsGeneratingReport(true);
+    setErrorMessage("");
+    setStatusMessage("Generating comparison report...");
+
+    try {
+      console.log("📤 Sending request to:", apiUrl("/report-comparison"));
+      const response = await fetch(apiUrl("/report-comparison"), {
+        method: "POST",
+        body: formData,
+      });
+
+      console.log("📥 Response status:", response.status);
+
+      if (!response.ok) {
+        const errorBody = await response.json().catch(() => ({}));
+        console.error("❌ Response error:", errorBody);
+        throw new Error(errorBody.detail || "Failed to generate comparison report.");
+      }
+
+      console.log("✅ Getting blob...");
+      const blob = await response.blob();
+      console.log("✅ Blob size:", blob.size, "bytes");
+      
+      const url = window.URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = "mammogram_comparison_report.pdf";
+      document.body.appendChild(anchor);
+      
+      console.log("🖱️ Triggering download...");
+      anchor.click();
+      
+      setTimeout(() => {
+        anchor.remove();
+        window.URL.revokeObjectURL(url);
+        console.log("✅ Download complete!");
+      }, 100);
+      
+      setStatusMessage("Comparison report downloaded successfully!");
+      setTimeout(() => setStatusMessage(""), 3000);
+    } catch (error) {
+      console.error("❌ Error in handleDownloadComparisonReport:", error);
+      setErrorMessage(error.message || "Error while downloading comparison report. Check console for details.");
+    } finally {
+      setIsGeneratingReport(false);
+    }
+  };
+
+  const handleDownloadSecondReport = async () => {
+    console.log("🔵 Download Second Image Report button clicked!");
+    
+    if (!secondFile) {
+      console.error("❌ No second file found!");
+      setErrorMessage("Please upload a second file before requesting the report.");
+      return;
+    }
+
+    console.log("✅ Second file found:", secondFile.name);
+    const formData = new FormData();
+    formData.append("file", secondFile);
+    
+    setIsGeneratingReport(true);
+    setErrorMessage("");
+    setStatusMessage("Generating second image report...");
+
+    try {
+      console.log("📤 Sending request to:", apiUrl("/report"));
+      const response = await fetch(apiUrl("/report"), {
+        method: "POST",
+        body: formData,
+      });
+
+      console.log("📥 Response status:", response.status);
+
+      if (!response.ok) {
+        const errorBody = await response.json().catch(() => ({}));
+        console.error("❌ Response error:", errorBody);
+        throw new Error(errorBody.detail || "Failed to generate report.");
+      }
+
+      console.log("✅ Getting blob...");
+      const blob = await response.blob();
+      console.log("✅ Blob size:", blob.size, "bytes");
+      
+      const url = window.URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = "mammogram_report_image2.pdf";
+      document.body.appendChild(anchor);
+      
+      console.log("🖱️ Triggering download...");
+      anchor.click();
+      
+      setTimeout(() => {
+        anchor.remove();
+        window.URL.revokeObjectURL(url);
+        console.log("✅ Download complete!");
+      }, 100);
+      
+      setStatusMessage("Second image report downloaded successfully!");
+      setTimeout(() => setStatusMessage(""), 3000);
+    } catch (error) {
+      console.error("❌ Error in handleDownloadSecondReport:", error);
+      setErrorMessage(error.message || "Error while downloading report. Check console for details.");
+    } finally {
+      setIsGeneratingReport(false);
+    }
+  };
+
   const handleDownloadImage = () => {
     const imageUrl = getActiveVisualImage();
     if (!imageUrl) {
@@ -477,6 +689,21 @@ function AppContent() {
     }
   };
 
+  const getActiveVisualImageSecond = () => {
+    if (!secondResults) return null;
+    switch (visualTab) {
+      case "heatmap":
+        return secondResults.heatmap;
+      case "bbox":
+        return secondResults.bbox;
+      case "original":
+        return secondResults.cancer_type || secondResults.original;
+      case "overlay":
+      default:
+        return secondResults.overlay;
+    }
+  };
+
   const getRiskClass = () => {
     const risk = results.risk?.toLowerCase() || "";
     // Check in order from most specific to least specific
@@ -525,24 +752,30 @@ function AppContent() {
         </div>
       </header>
 
-      {!analysisDone ? (
+      {!analysisDone && !showComparison ? (
         <section className="upload-section">
           <div className="upload-card">
             <h3>Upload mammogram (DICOM)</h3>
             <p>Max 200MB • Supported formats: DICOM</p>
             <div
-              className={`dropzone ${dragActive ? "active" : ""}`}
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onDrop={handleDrop}
-              onClick={handleBrowseClick}
+              className={`dropzone`}
+              onClick={() => {
+                // Smart click handler - opens correct file input based on state
+                if (!file) {
+                  const input = document.getElementById("fileInput");
+                  if (input) input.click();
+                } else if (!secondFile) {
+                  const input = document.getElementById("fileInputSecond");
+                  if (input) input.click();
+                }
+              }}
             >
               <FiUploadCloud
                 size={50}
                 style={{ color: "#AE70AF", marginBottom: "10px" }}
               />
               <p className="drop-main-text">
-                {isAnalyzing ? "Analyzing…" : "Drag & drop file here"}
+                {file && secondFile ? "Both Files Selected" : file ? "One File Selected" : "Select File"}
               </p>
               <p className="drop-sub-text">or click to browse files</p>
               <button
@@ -550,11 +783,16 @@ function AppContent() {
                 className="btn-primary"
                 onClick={(event) => {
                   event.stopPropagation();
-                  handleBrowseClick();
+                  if (!file) {
+                    const input = document.getElementById("fileInput");
+                    if (input) input.click();
+                  } else if (!secondFile) {
+                    const input = document.getElementById("fileInputSecond");
+                    if (input) input.click();
+                  }
                 }}
-                disabled={isAnalyzing}
               >
-                {isAnalyzing ? "Processing…" : "Browse File"}
+                {file && secondFile ? "Change Files" : file ? "Browse Another File" : "Browse File"}
               </button>
               <input
                 type="file"
@@ -562,14 +800,57 @@ function AppContent() {
                 style={{ display: "none" }}
                 onChange={handleFileChange}
                 accept=".jpg,.jpeg,.png,.dcm"
-                disabled={isAnalyzing}
+              />
+              <input
+                type="file"
+                id="fileInputSecond"
+                style={{ display: "none" }}
+                onChange={handleSecondFileChange}
+                accept=".jpg,.jpeg,.png,.dcm"
               />
             </div>
 
             {file && (
               <p className="selected-file">
-                Selected File: <strong>{file.name}</strong>
+                File 1: <strong>{file.name}</strong>
               </p>
+            )}
+
+            {secondFile && (
+              <p className="selected-file">
+                File 2: <strong>{secondFile.name}</strong>
+              </p>
+            )}
+
+            {/* Analyze Button - Show when both files are selected */}
+            {file && secondFile && (
+              <div style={{ textAlign: "center", marginTop: "30px" }}>
+                <button
+                  className="btn-primary"
+                  onClick={() => {
+                    analyzeFile(file);
+                    analyzeSecondFile(secondFile);
+                  }}
+                  disabled={isAnalyzing}
+                  style={{ padding: "12px 40px", fontSize: "1.1rem" }}
+                >
+                  {isAnalyzing ? "Analyzing…" : "Analyze Both Images"}
+                </button>
+              </div>
+            )}
+
+            {/* Analyze Single Image Button - If only first file selected */}
+            {file && !secondFile && (
+              <div style={{ textAlign: "center", marginTop: "20px" }}>
+                <button
+                  className="btn-primary"
+                  onClick={() => analyzeFile(file)}
+                  disabled={isAnalyzing}
+                  style={{ padding: "12px 40px", fontSize: "1.1rem" }}
+                >
+                  {isAnalyzing ? "Analyzing…" : "Analyze Image"}
+                </button>
+              </div>
             )}
 
             {/* Upload History Section */}
@@ -587,11 +868,20 @@ function AppContent() {
                           className="history-btn history-upload-btn"
                           onClick={(e) => {
                             e.stopPropagation();
-                            uploadFromHistory(item);
+                            fetch(item.data)
+                              .then(res => res.blob())
+                              .then(blob => {
+                                const file = new File([blob], item.name, { type: blob.type || 'image/jpeg' });
+                                setFile(file);
+                              })
+                              .catch(err => {
+                                console.error('Error loading from history:', err);
+                                setErrorMessage('Failed to load image from history');
+                              });
                           }}
-                          title="Re-upload this file"
+                          title="Use this file"
                         >
-                          Upload
+                          Use
                         </button>
                         <button
                           className="history-btn history-delete-btn"
@@ -622,7 +912,49 @@ function AppContent() {
             )}
           </div>
         </section>
+      ) : secondResults ? (
+        /* COMPARISON VIEW - When both images are analyzed, show ONLY the tabbed comparison */
+        <main className="analysis-container">
+          <section className="analysis-card">
+            <FullComparisonView
+              results={results}
+              secondResults={secondResults}
+              visualTab={visualTab}
+              setVisualTab={setVisualTab}
+              isZoomed={isZoomed}
+              setIsZoomed={setIsZoomed}
+              handleMouseMove={handleMouseMove}
+              handleImageClick={handleImageClick}
+              zoomImageRef={zoomImageRef}
+              getActiveVisualImage={getActiveVisualImage}
+              getActiveVisualImageSecond={getActiveVisualImageSecond}
+              getRiskClass={getRiskClass}
+              getResultClass={getResultClass}
+              handleDownloadImage={handleDownloadImage}
+              handleDownloadReport={handleDownloadReport}
+              handleDownloadSecondReport={handleDownloadSecondReport}
+              isGeneratingReport={isGeneratingReport}
+              file={file}
+              secondFile={secondFile}
+            />
+
+            <div className="btn-row" style={{ display: "flex", justifyContent: "center", marginTop: "20px" }}>
+              <button 
+                className="btn-secondary" 
+                onClick={handleBackToUpload}
+                style={{ 
+                  padding: "14px 40px", 
+                  fontSize: "1rem",
+                  minWidth: "280px"
+                }}
+              >
+                Analyze Another Image
+              </button>
+            </div>
+          </section>
+        </main>
       ) : (
+        /* SINGLE IMAGE VIEW - When only one image is analyzed */
         <main className="analysis-container">
           <section className="analysis-card">
             <div className="result-header" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
