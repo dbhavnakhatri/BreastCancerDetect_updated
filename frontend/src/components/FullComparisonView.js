@@ -4,6 +4,8 @@ import { FiDownload } from "react-icons/fi";
 function FullComparisonView({ 
   results, 
   secondResults, 
+  allResults = [], // Array of all results
+  files = [], // Array of all files
   visualTab, 
   setVisualTab, 
   isZoomed, 
@@ -22,12 +24,30 @@ function FullComparisonView({
   file,
   secondFile
 }) {
-  const [analysisTab, setAnalysisTab] = useState("image1");// Start with Image 2
+  const [analysisTab, setAnalysisTab] = useState(0); // Use index for multiple images
   const [detailsTab, setDetailsTab] = useState("clinical");
 
+  // Determine which results array to use
+  const resultsArray = allResults.length > 0 ? allResults : [results, secondResults].filter(Boolean);
+  const filesArray = files.length > 0 ? files : [file, secondFile].filter(Boolean);
+
   // Get the current data based on selected tab
-  const currentResults = analysisTab === "image1" ? results : secondResults;
-  const currentImage = analysisTab === "image1" ? getActiveVisualImage() : getActiveVisualImageSecond();
+  const currentResults = resultsArray[analysisTab] || results;
+  
+  // Get current image based on visual tab and analysis tab
+  const getCurrentImage = () => {
+    const res = resultsArray[analysisTab];
+    if (!res) return null;
+    switch (visualTab) {
+      case "heatmap": return res.heatmap;
+      case "bbox": return res.bbox;
+      case "original": return res.cancer_type || res.original;
+      case "overlay":
+      default: return res.overlay;
+    }
+  };
+  
+  const currentImage = getCurrentImage();
 
   // Helper function to get risk class for current results
   const getCurrentRiskClass = () => {
@@ -55,42 +75,33 @@ function FullComparisonView({
 
   return (
     <>
-      {/* Analysis Tab Buttons */}
-      <div style={{ display: "flex", gap: "15px", marginBottom: "30px", justifyContent: "center" }}>
-        <button
-          onClick={() => setAnalysisTab("image1")}
-          style={{
-            padding: "14px 35px",
-            fontSize: "1.1rem",
-            fontWeight: analysisTab === "image1" ? "700" : "600",
-            color: analysisTab === "image1" ? "white" : "#666",
-            background: analysisTab === "image1" ? "linear-gradient(135deg, #C2185B 0%, #AD1457 100%)" : "#f0f0f0",
-            border: "none",
-            borderRadius: "10px",
-            cursor: "pointer",
-            transition: "all 0.3s ease",
-            boxShadow: analysisTab === "image1" ? "0 4px 15px rgba(21, 101, 192, 0.4)" : "none",
-          }}
-        >
-          Image 1 Analysis
-        </button>
-        <button
-          onClick={() => setAnalysisTab("image2")}
-          style={{
-            padding: "14px 35px",
-            fontSize: "1.1rem",
-            fontWeight: analysisTab === "image2" ? "700" : "600",
-            color: analysisTab === "image2" ? "white" : "#666",
-            background: analysisTab === "image2" ? "linear-gradient(135deg, #C2185B 0%, #AD1457 100%)" : "#f0f0f0",
-            border: "none",
-            borderRadius: "10px",
-            cursor: "pointer",
-            transition: "all 0.3s ease",
-            boxShadow: analysisTab === "image2" ? "0 4px 15px rgba(194, 24, 91, 0.4)" : "none",
-          }}
-        >
-          Image 2 Analysis
-        </button>
+      {/* Analysis Tab Buttons - Dynamic based on number of results */}
+      <div style={{ display: "flex", gap: "10px", marginBottom: "30px", justifyContent: "center", flexWrap: "wrap" }}>
+        {resultsArray.map((res, index) => (
+          <button
+            key={index}
+            onClick={() => setAnalysisTab(index)}
+            style={{
+              padding: "12px 25px",
+              fontSize: "1rem",
+              fontWeight: analysisTab === index ? "700" : "600",
+              color: analysisTab === index ? "white" : "#666",
+              background: analysisTab === index ? "linear-gradient(135deg, #C2185B 0%, #AD1457 100%)" : "#f0f0f0",
+              border: "none",
+              borderRadius: "10px",
+              cursor: "pointer",
+              transition: "all 0.3s ease",
+              boxShadow: analysisTab === index ? "0 4px 15px rgba(194, 24, 91, 0.4)" : "none",
+            }}
+          >
+            Image {index + 1} Analysis
+            {(res?.fileName || filesArray[index]?.name) && (
+              <span style={{ display: "block", fontSize: "0.7rem", opacity: 0.85, marginTop: "3px" }}>
+                {(res?.fileName || filesArray[index]?.name || '').substring(0, 15)}{(res?.fileName || filesArray[index]?.name || '').length > 15 ? '...' : ''}
+              </span>
+            )}
+          </button>
+        ))}
       </div>
 
       {/* Header */}
