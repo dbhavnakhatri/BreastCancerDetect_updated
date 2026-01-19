@@ -50,6 +50,8 @@ function AppContent() {
   const [file, setFile] = useState(null);
   const [secondFile, setSecondFile] = useState(null);
   const [secondResults, setSecondResults] = useState(null);
+  const [files, setFiles] = useState([]); // Array for multiple files
+  const [allResults, setAllResults] = useState([]); // Array for all results
   const [dragActive, setDragActive] = useState(false);
   const [analysisDone, setAnalysisDone] = useState(false);
   const [showComparison, setShowComparison] = useState(false);
@@ -85,7 +87,7 @@ function AppContent() {
       data: fileData,
       timestamp: new Date().toISOString()
     };
-    
+
     setUploadHistory(prev => {
       // Keep only last 5 entries
       const updated = [newEntry, ...prev.filter(h => h.name !== fileName)].slice(0, 5);
@@ -170,37 +172,76 @@ function AppContent() {
   };
 
   const handleFileChange = (e) => {
-    if (e.target.files && e.target.files[0]) {
-      const selectedFile = e.target.files[0];
-      setFile(selectedFile);
-      
-      // Save to history
-      const reader = new FileReader();
-      reader.onload = () => {
-        saveToHistory(selectedFile.name, reader.result);
-      };
-      reader.readAsDataURL(selectedFile);
+    if (e.target.files && e.target.files.length > 0) {
+      const selectedFiles = Array.from(e.target.files);
+
+      // Add to files array (support multiple files)
+      setFiles(prev => [...prev, ...selectedFiles]);
+
+      // For backward compatibility, set first file
+      if (!file) {
+        setFile(selectedFiles[0]);
+      } else if (!secondFile && selectedFiles.length > 0) {
+        setSecondFile(selectedFiles[0]);
+      }
+
+      // Save all to history
+      selectedFiles.forEach(selectedFile => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          saveToHistory(selectedFile.name, reader.result);
+        };
+        reader.readAsDataURL(selectedFile);
+      });
     }
   };
 
   const handleSecondFileChange = (e) => {
-    if (e.target.files && e.target.files[0]) {
-      const selectedFile = e.target.files[0];
-      setSecondFile(selectedFile);
-      
+    if (e.target.files && e.target.files.length > 0) {
+      const selectedFiles = Array.from(e.target.files);
+
+      // Add to files array
+      setFiles(prev => [...prev, ...selectedFiles]);
+
+      // For backward compatibility
+      if (!secondFile) {
+        setSecondFile(selectedFiles[0]);
+      }
+
       // Save to history
-      const reader = new FileReader();
-      reader.onload = () => {
-        saveToHistory(selectedFile.name, reader.result);
-      };
-      reader.readAsDataURL(selectedFile);
+      selectedFiles.forEach(selectedFile => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          saveToHistory(selectedFile.name, reader.result);
+        };
+        reader.readAsDataURL(selectedFile);
+      });
     }
   };
-  
+
+  // Remove a specific file from the list
+  const removeFile = (index) => {
+    setFiles(prev => prev.filter((_, i) => i !== index));
+    // Update backward compatible states
+    if (index === 0) {
+      setFile(files[1] || null);
+      setSecondFile(files[2] || null);
+    } else if (index === 1) {
+      setSecondFile(files[2] || null);
+    }
+  };
+
+  // Clear all files
+  const clearAllFiles = () => {
+    setFiles([]);
+    setFile(null);
+    setSecondFile(null);
+  };
+
   // Helper function to extract view code from filename
   const extractViewCodeFromFilename = (filename) => {
     const upperName = filename.toUpperCase();
-    
+
     // Check for specific patterns
     if (upperName.includes('LMLO') || upperName.includes('LEFT_MLO') || upperName.includes('L-MLO')) {
       return 'L-MLO';
@@ -215,7 +256,7 @@ function AppContent() {
     } else if (upperName.includes('CC')) {
       return 'CC';
     }
-    
+
     return null;
   };
 
@@ -235,7 +276,7 @@ function AppContent() {
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       const droppedFile = e.dataTransfer.files[0];
       setFile(droppedFile);
-      
+
       // Extract view code from filename immediately for real-time display
       const viewCode = extractViewCodeFromFilename(droppedFile.name);
       if (viewCode) {
@@ -250,7 +291,7 @@ function AppContent() {
           }
         }));
       }
-      
+
       analyzeFile(droppedFile);
     }
   };
@@ -263,11 +304,117 @@ function AppContent() {
   const handleBackToUpload = () => {
     setAnalysisDone(false);
     setResults({});
+    setSecondResults(null);
     setFile(null);
+    setSecondFile(null);
+    setFiles([]);
+    setAllResults([]);
     setVisualTab("overlay");
     setDetailsTab("clinical");
     setStatusMessage("");
     setErrorMessage("");
+  };
+
+  // Analyze a single file and return the result
+  const analyzeSingleFile = async (selectedFile, index) => {
+    const formData = new FormData();
+    formData.append("file", selectedFile);
+
+    const endpoint = "/analyze";
+    const currentApiUrl = apiUrl(endpoint);
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 120000);
+
+    const response = await fetch(currentApiUrl, {
+      method: "POST",
+      body: formData,
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      const errorBody = await response.json().catch(() => ({}));
+      throw new Error(errorBody.detail || `Server error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const images = data.images || {};
+    const confidencePercent =
+      data.confidence !== undefined && data.confidence <= 1
+        ? data.confidence * 100
+        : data.confidence ?? null;
+
+    return {
+      fileName: selectedFile.name,
+      index: index,
+      original: asDataUrl(images.original),
+      overlay: asDataUrl(images.overlay),
+      heatmap: asDataUrl(images.heatmap_only),
+      bbox: asDataUrl(images.bbox),
+      cancer_type: asDataUrl(images.cancer_type),
+      malignant: data.malignant_prob ?? null,
+      benign: data.benign_prob ?? null,
+      risk: data.risk_level ?? "Unavailable",
+      riskIcon: data.risk_icon,
+      riskColor: data.risk_color,
+      result: data.result ?? "Analysis Result",
+      confidence: confidencePercent,
+      rawScore: data.confidence ?? null,
+      threshold: data.threshold ?? 0.5,
+      stats: data.stats || {},
+      findings: data.findings || null,
+      view_analysis: data.view_analysis || null,
+    };
+  };
+
+  // Analyze all files
+  const analyzeAllFiles = async () => {
+    if (files.length === 0) return;
+
+    setIsAnalyzing(true);
+    setStatusMessage(`Analyzing ${files.length} image(s)...`);
+    setErrorMessage("");
+    setAllResults([]);
+
+    try {
+      const results = [];
+      for (let i = 0; i < files.length; i++) {
+        setStatusMessage(`Analyzing image ${i + 1} of ${files.length}...`);
+        const result = await analyzeSingleFile(files[i], i);
+        results.push(result);
+      }
+
+      setAllResults(results);
+
+      // For backward compatibility, set first two results
+      if (results.length > 0) {
+        setResults(results[0]);
+        setFile(files[0]);
+      }
+      if (results.length > 1) {
+        setSecondResults(results[1]);
+        setSecondFile(files[1]);
+      }
+
+      setAnalysisDone(true);
+      setVisualTab("overlay");
+      setDetailsTab("clinical");
+      setStatusMessage("Analysis complete.");
+    } catch (error) {
+      console.error("Analysis error:", error);
+      let errorMsg = "Backend not reachable.";
+      if (error.name === 'AbortError') {
+        errorMsg = "Request timed out. Please try again.";
+      } else if (error.message) {
+        errorMsg = error.message;
+      }
+      setErrorMessage(errorMsg);
+      setStatusMessage("");
+    } finally {
+      setIsAnalyzing(false);
+    }
   };
 
   const analyzeFile = async (selectedFile) => {
@@ -456,7 +603,7 @@ function AppContent() {
 
   const handleDownloadReport = async () => {
     console.log("🔵 Download Report button clicked!");
-    
+
     if (!file) {
       console.error("❌ No file found!");
       setErrorMessage("Please upload a file before requesting the report.");
@@ -466,7 +613,7 @@ function AppContent() {
     console.log("✅ File found:", file.name);
     const formData = new FormData();
     formData.append("file", file);
-    
+
     setIsGeneratingReport(true);
     setErrorMessage("");
     setStatusMessage("Generating report...");
@@ -489,22 +636,22 @@ function AppContent() {
       console.log("✅ Getting blob...");
       const blob = await response.blob();
       console.log("✅ Blob size:", blob.size, "bytes");
-      
+
       const url = window.URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
       anchor.download = "mammogram_report.pdf";
       document.body.appendChild(anchor);
-      
+
       console.log("🖱️ Triggering download...");
       anchor.click();
-      
+
       setTimeout(() => {
         anchor.remove();
         window.URL.revokeObjectURL(url);
         console.log("✅ Download complete!");
       }, 100);
-      
+
       setStatusMessage("Report downloaded successfully!");
       setTimeout(() => setStatusMessage(""), 3000);
     } catch (error) {
@@ -517,7 +664,7 @@ function AppContent() {
 
   const handleDownloadComparisonReport = async () => {
     console.log("🔵 Download Comparison Report button clicked!");
-    
+
     if (!file || !secondFile) {
       console.error("❌ Missing files!");
       setErrorMessage("Please upload both files before requesting the comparison report.");
@@ -528,7 +675,7 @@ function AppContent() {
     const formData = new FormData();
     formData.append("file1", file);
     formData.append("file2", secondFile);
-    
+
     setIsGeneratingReport(true);
     setErrorMessage("");
     setStatusMessage("Generating comparison report...");
@@ -551,22 +698,22 @@ function AppContent() {
       console.log("✅ Getting blob...");
       const blob = await response.blob();
       console.log("✅ Blob size:", blob.size, "bytes");
-      
+
       const url = window.URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
       anchor.download = "mammogram_comparison_report.pdf";
       document.body.appendChild(anchor);
-      
+
       console.log("🖱️ Triggering download...");
       anchor.click();
-      
+
       setTimeout(() => {
         anchor.remove();
         window.URL.revokeObjectURL(url);
         console.log("✅ Download complete!");
       }, 100);
-      
+
       setStatusMessage("Comparison report downloaded successfully!");
       setTimeout(() => setStatusMessage(""), 3000);
     } catch (error) {
@@ -579,7 +726,7 @@ function AppContent() {
 
   const handleDownloadSecondReport = async () => {
     console.log("🔵 Download Second Image Report button clicked!");
-    
+
     if (!secondFile) {
       console.error("❌ No second file found!");
       setErrorMessage("Please upload a second file before requesting the report.");
@@ -589,7 +736,7 @@ function AppContent() {
     console.log("✅ Second file found:", secondFile.name);
     const formData = new FormData();
     formData.append("file", secondFile);
-    
+
     setIsGeneratingReport(true);
     setErrorMessage("");
     setStatusMessage("Generating second image report...");
@@ -612,22 +759,22 @@ function AppContent() {
       console.log("✅ Getting blob...");
       const blob = await response.blob();
       console.log("✅ Blob size:", blob.size, "bytes");
-      
+
       const url = window.URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
       anchor.download = "mammogram_report_image2.pdf";
       document.body.appendChild(anchor);
-      
+
       console.log("🖱️ Triggering download...");
       anchor.click();
-      
+
       setTimeout(() => {
         anchor.remove();
         window.URL.revokeObjectURL(url);
         console.log("✅ Download complete!");
       }, 100);
-      
+
       setStatusMessage("Second image report downloaded successfully!");
       setTimeout(() => setStatusMessage(""), 3000);
     } catch (error) {
@@ -647,7 +794,7 @@ function AppContent() {
 
     const link = document.createElement("a");
     link.href = imageUrl;
-    
+
     // Determine filename based on active tab
     let filename = "mammogram_analysis";
     switch (visualTab) {
@@ -665,12 +812,12 @@ function AppContent() {
         filename = "mammogram_overlay.png";
         break;
     }
-    
+
     link.download = filename;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    
+
     setStatusMessage(`Downloaded: ${filename}`);
     setTimeout(() => setStatusMessage(""), 3000);
   };
@@ -756,18 +903,12 @@ function AppContent() {
         <section className="upload-section">
           <div className="upload-card">
             <h3>Upload mammogram (DICOM)</h3>
-            <p>Max 200MB • Supported formats: DICOM</p>
+            <p>Max 200MB • Supported formats: DICOM, JPG, PNG • Upload 1 or more images</p>
             <div
               className={`dropzone`}
               onClick={() => {
-                // Smart click handler - opens correct file input based on state
-                if (!file) {
-                  const input = document.getElementById("fileInput");
-                  if (input) input.click();
-                } else if (!secondFile) {
-                  const input = document.getElementById("fileInputSecond");
-                  if (input) input.click();
-                }
+                const input = document.getElementById("fileInput");
+                if (input) input.click();
               }}
             >
               <FiUploadCloud
@@ -775,7 +916,7 @@ function AppContent() {
                 style={{ color: "#AE70AF", marginBottom: "10px" }}
               />
               <p className="drop-main-text">
-                {file && secondFile ? "Both Files Selected" : file ? "One File Selected" : "Select File"}
+                {files.length > 0 ? `${files.length} File${files.length > 1 ? 's' : ''} Selected` : "Select Files"}
               </p>
               <p className="drop-sub-text">or click to browse files</p>
               <button
@@ -783,16 +924,11 @@ function AppContent() {
                 className="btn-primary"
                 onClick={(event) => {
                   event.stopPropagation();
-                  if (!file) {
-                    const input = document.getElementById("fileInput");
-                    if (input) input.click();
-                  } else if (!secondFile) {
-                    const input = document.getElementById("fileInputSecond");
-                    if (input) input.click();
-                  }
+                  const input = document.getElementById("fileInput");
+                  if (input) input.click();
                 }}
               >
-                {file && secondFile ? "Change Files" : file ? "Browse Another File" : "Browse File"}
+                {files.length > 0 ? "Add More Files" : "Browse Files"}
               </button>
               <input
                 type="file"
@@ -800,102 +936,120 @@ function AppContent() {
                 style={{ display: "none" }}
                 onChange={handleFileChange}
                 accept=".jpg,.jpeg,.png,.dcm"
-              />
-              <input
-                type="file"
-                id="fileInputSecond"
-                style={{ display: "none" }}
-                onChange={handleSecondFileChange}
-                accept=".jpg,.jpeg,.png,.dcm"
+                multiple
               />
             </div>
 
-            {file && (
-              <p className="selected-file">
-                File 1: <strong>{file.name}</strong>
-              </p>
+            {/* Display all selected files */}
+            {files.length > 0 && (
+              <div style={{ marginTop: "15px" }}>
+                {files.map((f, index) => (
+                  <div key={index} className="selected-file" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px", padding: "8px 12px", background: "rgba(174, 112, 175, 0.1)", borderRadius: "8px" }}>
+                    <span>File {index + 1}: <strong>{f.name}</strong></span>
+                    <button
+                      onClick={() => removeFile(index)}
+                      style={{ background: "none", border: "none", color: "#C2185B", cursor: "pointer", fontSize: "1.2rem", padding: "0 8px" }}
+                      title="Remove file"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+                {files.length > 1 && (
+                  <button
+                    onClick={clearAllFiles}
+                    style={{ marginTop: "10px", background: "none", border: "1px solid #C2185B", color: "#C2185B", padding: "6px 16px", borderRadius: "6px", cursor: "pointer", fontSize: "0.9rem" }}
+                  >
+                    Clear All Files
+                  </button>
+                )}
+              </div>
             )}
 
-            {secondFile && (
-              <p className="selected-file">
-                File 2: <strong>{secondFile.name}</strong>
-              </p>
-            )}
-
-            {/* Analyze Button - Show when both files are selected */}
-            {file && secondFile && (
-              <div style={{ textAlign: "center", marginTop: "30px" }}>
+            {/* Analyze Button - Show when at least one file is selected */}
+            {files.length > 0 && (
+              <div style={{ textAlign: "center", display: 'flex', justifyContent: 'center', marginTop: "30px" }}>
                 <button
-                  className="btn-primary"
-                  onClick={() => {
-                    analyzeFile(file);
-                    analyzeSecondFile(secondFile);
-                  }}
+                  className={`btn-primary ${isAnalyzing ? "btn-loading" : ""}`}
+                  onClick={() => analyzeAllFiles()}
                   disabled={isAnalyzing}
                   style={{ padding: "12px 40px", fontSize: "1.1rem" }}
                 >
-                  {isAnalyzing ? "Analyzing…" : "Analyze Both Images"}
+                  {isAnalyzing ? (
+                    <span className="loader" />
+                  ) : files.length === 1 ? (
+                    "Analyze Image"
+                  ) : (
+                    `Analyze ${files.length} Images`
+                  )}
                 </button>
               </div>
             )}
 
-            {/* Analyze Single Image Button - If only first file selected */}
-            {file && !secondFile && (
-              <div style={{ textAlign: "center", marginTop: "20px" }}>
-                <button
-                  className="btn-primary"
-                  onClick={() => analyzeFile(file)}
-                  disabled={isAnalyzing}
-                  style={{ padding: "12px 40px", fontSize: "1.1rem" }}
-                >
-                  {isAnalyzing ? "Analyzing…" : "Analyze Image"}
-                </button>
-              </div>
-            )}
-
-            {/* Upload History Section */}
-            {uploadHistory.length > 0 && !file && (
-              <div className="upload-history">
+            {/* Upload History Section - Show always when there's history */}
+            {uploadHistory.length > 0 && (
+              <div className="upload-history" style={{ marginTop: "20px" }}>
                 <p className="history-title">Recent Uploads</p>
+                <p style={{ fontSize: "0.8rem", color: "#888", marginBottom: "10px" }}>Click "Add" to add multiple files for analysis</p>
                 <div className="history-list">
-                  {uploadHistory.map((item) => (
-                    <div key={item.id} className="history-item">
-                      <span className="history-name" title={item.name}>
-                        📄 {item.name.length > 25 ? item.name.substring(0, 22) + '...' : item.name}
-                      </span>
-                      <div className="history-actions">
-                        <button
-                          className="history-btn history-upload-btn"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            fetch(item.data)
-                              .then(res => res.blob())
-                              .then(blob => {
-                                const file = new File([blob], item.name, { type: blob.type || 'image/jpeg' });
-                                setFile(file);
-                              })
-                              .catch(err => {
-                                console.error('Error loading from history:', err);
-                                setErrorMessage('Failed to load image from history');
-                              });
-                          }}
-                          title="Use this file"
-                        >
-                          Use
-                        </button>
-                        <button
-                          className="history-btn history-delete-btn"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            removeFromHistory(item.id);
-                          }}
-                          title="Remove from history"
-                        >
-                          ✕
-                        </button>
+                  {uploadHistory.map((item) => {
+                    // Check if this item is already in files array
+                    const isAlreadyAdded = files.some(f => f.name === item.name);
+
+                    return (
+                      <div key={item.id} className="history-item" style={{ opacity: isAlreadyAdded ? 0.6 : 1 }}>
+                        <span className="history-name" title={item.name}>
+                          📄 {item.name.length > 25 ? item.name.substring(0, 22) + '...' : item.name}
+                          {isAlreadyAdded && <span style={{ color: "#4CAF50", marginLeft: "8px", fontSize: "0.8rem" }}>✓ Added</span>}
+                        </span>
+                        <div className="history-actions">
+                          <button
+                            className="history-btn history-upload-btn"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (isAlreadyAdded) return;
+
+                              fetch(item.data)
+                                .then(res => res.blob())
+                                .then(blob => {
+                                  const newFile = new File([blob], item.name, { type: blob.type || 'image/jpeg' });
+                                  // Add to files array instead of replacing
+                                  setFiles(prev => [...prev, newFile]);
+                                  // For backward compatibility
+                                  if (!file) {
+                                    setFile(newFile);
+                                  } else if (!secondFile) {
+                                    setSecondFile(newFile);
+                                  }
+                                })
+                                .catch(err => {
+                                  console.error('Error loading from history:', err);
+                                  setErrorMessage('Failed to load image from history');
+                                });
+                            }}
+                            title={isAlreadyAdded ? "Already added" : "Add this file"}
+                            style={{
+                              background: isAlreadyAdded ? "#ccc" : "",
+                              cursor: isAlreadyAdded ? "not-allowed" : "pointer"
+                            }}
+                            disabled={isAlreadyAdded}
+                          >
+                            {isAlreadyAdded ? "Added" : "Add"}
+                          </button>
+                          <button
+                            className="history-btn history-delete-btn"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              removeFromHistory(item.id);
+                            }}
+                            title="Remove from history"
+                          >
+                            ✕
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -912,13 +1066,15 @@ function AppContent() {
             )}
           </div>
         </section>
-      ) : secondResults ? (
+      ) : (allResults.length > 1 || secondResults) ? (
         /* COMPARISON VIEW - When both images are analyzed, show ONLY the tabbed comparison */
         <main className="analysis-container">
           <section className="analysis-card">
             <FullComparisonView
               results={results}
               secondResults={secondResults}
+              allResults={allResults}
+              files={files}
               visualTab={visualTab}
               setVisualTab={setVisualTab}
               isZoomed={isZoomed}
@@ -939,11 +1095,11 @@ function AppContent() {
             />
 
             <div className="btn-row" style={{ display: "flex", justifyContent: "center", marginTop: "20px" }}>
-              <button 
-                className="btn-secondary" 
+              <button
+                className="btn-secondary"
                 onClick={handleBackToUpload}
-                style={{ 
-                  padding: "14px 40px", 
+                style={{
+                  padding: "14px 40px",
                   fontSize: "1rem",
                   minWidth: "280px"
                 }}
@@ -1097,13 +1253,13 @@ function AppContent() {
                               color: 'rgba(255, 255, 255, 0.85)',
                               letterSpacing: '0.5px'
                             }}>
-                              {results.view_analysis.view_code.includes('MLO') 
-                                ? 'Mediolateral Oblique: Angled side view' 
+                              {results.view_analysis.view_code.includes('MLO')
+                                ? 'Mediolateral Oblique: Angled side view'
                                 : 'Craniocaudal: Top-to-bottom view'}
                             </div>
                           </div>
                         )}
-                        
+
                         <img
                           ref={zoomImageRef}
                           src={getActiveVisualImage()}
@@ -1112,7 +1268,7 @@ function AppContent() {
                         />
 
                       </div>
-                      
+
                       {/* Download Icon Button - Outside zoom container to prevent zoom on click */}
                       <button
                         onClick={(e) => {
@@ -1169,7 +1325,7 @@ function AppContent() {
                       <p className="regions-header" style={{ marginBottom: '16px', fontSize: '1.1rem' }}>
                         📊 Comprehensive Image Analysis
                       </p>
-                      
+
                       {/* Row 1: Primary Analysis - Breast Density & Tissue Texture */}
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '14px', marginBottom: '14px' }}>
                         {/* Breast Density */}
@@ -1187,7 +1343,7 @@ function AppContent() {
                             <div style={{ marginTop: '10px', fontSize: '0.8rem', color: '#1565C0', fontStyle: 'italic', padding: '6px 8px', background: 'rgba(255,255,255,0.4)', borderRadius: '6px' }}>{results.findings.comprehensive_analysis.breast_density.description}</div>
                           </div>
                         )}
-                        
+
                         {/* Tissue Texture */}
                         {results.findings.comprehensive_analysis.tissue_texture && (
                           <div style={{ padding: '14px', background: 'linear-gradient(135deg, #F3E5F5 0%, #E1BEE7 100%)', borderRadius: '12px', boxShadow: '0 2px 8px rgba(123, 31, 162, 0.15)' }}>
@@ -1202,7 +1358,7 @@ function AppContent() {
                           </div>
                         )}
                       </div>
-                      
+
                       {/* Row 2: Secondary Analysis - Symmetry, Skin & Nipple, Vascular */}
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '14px', marginBottom: '14px' }}>
                         {/* Symmetry Analysis */}
@@ -1218,7 +1374,7 @@ function AppContent() {
                             <div style={{ marginTop: '8px', fontSize: '0.78rem', color: '#2E7D32', fontStyle: 'italic' }}>{results.findings.comprehensive_analysis.symmetry.clinical_significance}</div>
                           </div>
                         )}
-                        
+
                         {/* Skin & Nipple */}
                         {results.findings.comprehensive_analysis.skin_nipple && (
                           <div style={{ padding: '14px', background: 'linear-gradient(135deg, #FFF3E0 0%, #FFE0B2 100%)', borderRadius: '12px', boxShadow: '0 2px 8px rgba(230, 81, 0, 0.15)' }}>
@@ -1232,7 +1388,7 @@ function AppContent() {
                             </div>
                           </div>
                         )}
-                        
+
                         {/* Vascular Patterns */}
                         {results.findings.comprehensive_analysis.vascular_patterns && (
                           <div style={{ padding: '14px', background: 'linear-gradient(135deg, #FCE4EC 0%, #F8BBD9 100%)', borderRadius: '12px', boxShadow: '0 2px 8px rgba(194, 24, 91, 0.15)' }}>
@@ -1247,7 +1403,7 @@ function AppContent() {
                           </div>
                         )}
                       </div>
-                      
+
                       {/* Row 3: Image Quality - Full Width */}
                       {results.findings.comprehensive_analysis.image_quality && (
                         <div style={{ padding: '14px', background: 'linear-gradient(135deg, #ECEFF1 0%, #CFD8DC 100%)', borderRadius: '12px', boxShadow: '0 2px 8px rgba(69, 90, 100, 0.15)', marginBottom: '14px' }}>
@@ -1270,7 +1426,7 @@ function AppContent() {
                           </div>
                         </div>
                       )}
-                      
+
                       {/* Row 4: Calcification Analysis - Alert Style if detected */}
                       {results.findings.comprehensive_analysis.calcification_analysis?.detected && (
                         <div style={{ padding: '14px', background: 'linear-gradient(135deg, #FFEBEE 0%, #FFCDD2 100%)', borderRadius: '12px', border: '2px solid #EF5350', boxShadow: '0 2px 12px rgba(239, 83, 80, 0.25)' }}>
@@ -1329,7 +1485,7 @@ function AppContent() {
                                   </div>
                                   <div><span>Location:</span> <strong>{region.location?.quadrant || 'Unknown'}</strong></div>
                                   <div><span>Confidence:</span> <strong style={{ color: region.confidence > 70 ? '#DC2626' : '#059669' }}>{region.confidence?.toFixed(1)}%</strong></div>
-                                  
+
                                   {/* Morphology Details */}
                                   <div><span>Morphology:</span> <strong>{region.morphology?.shape || '—'}</strong></div>
                                   <div><span>Margin:</span> <strong>{region.margin?.type || '—'}</strong></div>
@@ -1337,7 +1493,7 @@ function AppContent() {
                                   <div><span>Density:</span> <strong>{region.density?.level || '—'}</strong></div>
                                   <div><span>Vascularity:</span> <strong>{region.vascularity?.assessment || '—'}</strong></div>
                                   <div><span>Tissue:</span> <strong>{region.tissue_composition?.type || '—'}</strong></div>
-                                  
+
                                   {/* Calcification details if present */}
                                   {region.calcification_details && (
                                     <>
@@ -1345,7 +1501,7 @@ function AppContent() {
                                       <div><span>Calc. Dist:</span> <strong>{region.calcification_details.distribution || '—'}</strong></div>
                                     </>
                                   )}
-                                  
+
                                   <div>
                                     <span>Severity:</span>{' '}
                                     <span className={`severity-badge ${region.severity || 'low'}`}>
@@ -1354,7 +1510,7 @@ function AppContent() {
                                   </div>
                                   <div><span>Area:</span> <strong>{region.size?.area_percentage?.toFixed(2)}%</strong></div>
                                 </div>
-                                
+
                                 {/* Clinical Significance */}
                                 {region.clinical_significance && (
                                   <div style={{ marginTop: '10px', padding: '8px 12px', background: 'rgba(233, 30, 99, 0.08)', borderRadius: '8px', borderLeft: '3px solid #E91E63' }}>
@@ -1362,7 +1518,7 @@ function AppContent() {
                                     <div style={{ fontSize: '0.85rem', color: '#333' }}>{region.clinical_significance}</div>
                                   </div>
                                 )}
-                                
+
                                 {/* Recommended Action */}
                                 {region.recommended_action && (
                                   <div style={{ marginTop: '8px', padding: '8px 12px', background: 'rgba(156, 43, 109, 0.08)', borderRadius: '8px', borderLeft: '3px solid #9C2B6D' }}>
@@ -1410,10 +1566,10 @@ function AppContent() {
                 <p className="regions-header" style={{ textAlign: 'center' }}>
                   Mammogram View Analysis
                   {isAnalyzing && (
-                    <span style={{ 
-                      marginLeft: '12px', 
-                      fontSize: '0.75rem', 
-                      color: '#F57C00', 
+                    <span style={{
+                      marginLeft: '12px',
+                      fontSize: '0.75rem',
+                      color: '#F57C00',
                       fontWeight: '500',
                       animation: 'pulse 1.5s ease-in-out infinite'
                     }}>
@@ -1421,22 +1577,22 @@ function AppContent() {
                     </span>
                   )}
                 </p>
-                
-                <div style={{ 
-                  padding: '16px', 
-                  background: results.view_analysis.view_code?.includes('MLO') 
-                    ? 'linear-gradient(135deg, #EDE7F6 0%, #D1C4E9 100%)' 
-                    : 'linear-gradient(135deg, #E0F2F1 0%, #B2DFDB 100%)', 
-                  borderRadius: '12px', 
+
+                <div style={{
+                  padding: '16px',
+                  background: results.view_analysis.view_code?.includes('MLO')
+                    ? 'linear-gradient(135deg, #EDE7F6 0%, #D1C4E9 100%)'
+                    : 'linear-gradient(135deg, #E0F2F1 0%, #B2DFDB 100%)',
+                  borderRadius: '12px',
                   boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
                   opacity: isAnalyzing ? 0.9 : 1,
                   transition: 'opacity 0.3s ease'
                 }}>
                   {/* View Type Header with View Code Badge */}
-                  <div style={{ 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    gap: '12px', 
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
                     marginBottom: '16px',
                     padding: '10px 14px',
                     background: 'rgba(255,255,255,0.7)',
@@ -1446,8 +1602,8 @@ function AppContent() {
                     <div style={{
                       padding: '8px 16px',
                       borderRadius: '8px',
-                      background: results.view_analysis.view_code?.includes('MLO') 
-                        ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' 
+                      background: results.view_analysis.view_code?.includes('MLO')
+                        ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
                         : 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)',
                       color: 'white',
                       fontWeight: '800',
@@ -1459,21 +1615,21 @@ function AppContent() {
                       {results.view_analysis.view_code || 'N/A'}
                     </div>
                     <div style={{ flex: 1 }}>
-                      <div style={{ 
-                        fontWeight: '700', 
-                        fontSize: '1.2rem', 
+                      <div style={{
+                        fontWeight: '700',
+                        fontSize: '1.2rem',
                         color: results.view_analysis.view_code?.includes('MLO') ? '#5E35B1' : '#00796B'
                       }}>
                         {results.view_analysis.view_code} View
                       </div>
                       <div style={{ fontSize: '0.85rem', color: '#666', marginTop: '2px' }}>
-                        {results.view_analysis.view_code?.includes('MLO') 
-                          ? 'Medio-Lateral Oblique: Angled side view showing pectoral muscle and axilla' 
+                        {results.view_analysis.view_code?.includes('MLO')
+                          ? 'Medio-Lateral Oblique: Angled side view showing pectoral muscle and axilla'
                           : 'Cranio-Caudal: Top-to-bottom view for medial/lateral tissue assessment'}
                       </div>
                     </div>
                   </div>
-                  
+
                   {/* View Analysis Grid - Only unique/view-specific information */}
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
                     {/* Laterality */}
@@ -1483,13 +1639,13 @@ function AppContent() {
                         {results.view_analysis.view_code || 'N/A'}
                       </div>
                     </div>
-                    
+
                     {/* Image Quality */}
                     <div style={{ padding: '12px', background: 'rgba(255,255,255,0.6)', borderRadius: '8px' }}>
                       <div style={{ fontSize: '0.75rem', color: '#666', marginBottom: '4px' }}>Image Quality</div>
                       <div style={{ fontWeight: '600', color: '#333' }}>{results.view_analysis.image_quality || 'N/A'}</div>
                     </div>
-                    
+
                     {/* Quality Score */}
                     <div style={{ padding: '12px', background: 'rgba(255,255,255,0.6)', borderRadius: '8px' }}>
                       <div style={{ fontSize: '0.75rem', color: '#666', marginBottom: '4px' }}>Quality Score</div>
@@ -1497,7 +1653,7 @@ function AppContent() {
                         {results.view_analysis.quality_score ? `${results.view_analysis.quality_score}%` : '...'}
                       </div>
                     </div>
-                    
+
                     {/* MLO-specific: Axillary Findings */}
                     {results.view_analysis.view_code?.includes('MLO') && results.view_analysis.axillary_findings && (
                       <div style={{ padding: '12px', background: 'rgba(255,255,255,0.6)', borderRadius: '8px' }}>
@@ -1507,7 +1663,7 @@ function AppContent() {
                         </div>
                       </div>
                     )}
-                    
+
                     {/* MLO-specific: Pectoral Muscle */}
                     {results.view_analysis.view_code?.includes('MLO') && results.view_analysis.pectoral_muscle_visibility && (
                       <div style={{ padding: '12px', background: 'rgba(255,255,255,0.6)', borderRadius: '8px' }}>
@@ -1517,7 +1673,7 @@ function AppContent() {
                         </div>
                       </div>
                     )}
-                    
+
                     {/* CC-specific: Asymmetry */}
                     {results.view_analysis.view_code?.includes('CC') && results.view_analysis.asymmetry && (
                       <div style={{ padding: '12px', background: 'rgba(255,255,255,0.6)', borderRadius: '8px' }}>
@@ -1527,7 +1683,7 @@ function AppContent() {
                         </div>
                       </div>
                     )}
-                    
+
                     {/* CC-specific: Skin/Nipple Changes */}
                     {results.view_analysis.view_code?.includes('CC') && results.view_analysis.skin_nipple_changes && (
                       <div style={{ padding: '12px', background: 'rgba(255,255,255,0.6)', borderRadius: '8px' }}>
@@ -1538,30 +1694,29 @@ function AppContent() {
                       </div>
                     )}
                   </div>
-                  
+
                   {/* Impression */}
-                  <div style={{ 
-                    marginTop: '14px', 
-                    padding: '12px 14px', 
-                    background: results.view_analysis.suspicion_level === 'High' 
-                      ? 'rgba(198, 40, 40, 0.1)' 
+                  <div style={{
+                    marginTop: '14px',
+                    padding: '12px 14px',
+                    background: results.view_analysis.suspicion_level === 'High'
+                      ? 'rgba(198, 40, 40, 0.1)'
                       : results.view_analysis.suspicion_level === 'Intermediate'
                         ? 'rgba(245, 124, 0, 0.1)'
                         : 'rgba(46, 125, 50, 0.1)',
                     borderRadius: '8px',
-                    borderLeft: `4px solid ${
-                      results.view_analysis.suspicion_level === 'High' 
-                        ? '#C62828' 
+                    borderLeft: `4px solid ${results.view_analysis.suspicion_level === 'High'
+                        ? '#C62828'
                         : results.view_analysis.suspicion_level === 'Intermediate'
                           ? '#F57C00'
                           : '#2E7D32'
-                    }`
+                      }`
                   }}>
                     <div style={{ fontSize: '0.75rem', color: '#666', marginBottom: '4px' }}>Impression</div>
-                    <div style={{ 
-                      fontWeight: '600', 
-                      color: results.view_analysis.suspicion_level === 'High' 
-                        ? '#C62828' 
+                    <div style={{
+                      fontWeight: '600',
+                      color: results.view_analysis.suspicion_level === 'High'
+                        ? '#C62828'
                         : results.view_analysis.suspicion_level === 'Intermediate'
                           ? '#F57C00'
                           : '#2E7D32'
@@ -1569,7 +1724,7 @@ function AppContent() {
                       {results.view_analysis.impression || 'Analysis complete'}
                     </div>
                     <div style={{ fontSize: '0.8rem', color: '#666', marginTop: '6px' }}>
-                      Suspicion Level: <strong>{results.view_analysis.suspicion_level || 'N/A'}</strong> | 
+                      Suspicion Level: <strong>{results.view_analysis.suspicion_level || 'N/A'}</strong> |
                       Confidence: <strong>{results.view_analysis.confidence_score || 'N/A'}</strong>
                     </div>
                   </div>
