@@ -1,37 +1,61 @@
 @echo off
-REM Breast Cancer Detection Project Startup Script
+echo ========================================
+echo STARTING BREAST CANCER DETECTION PROJECT
+echo ========================================
+echo.
+
+echo This will start:
+echo   1. Backend API (Port 8001)
+echo   2. Frontend UI (Port 3001)
+echo.
+echo Press any key to continue...
+pause >nul
 
 echo.
 echo ========================================
-echo Breast Cancer Detection System
+echo Step 1: Starting Backend Server
 echo ========================================
 echo.
-echo Starting Backend and Frontend...
-echo.
 
-REM Start Backend in new window
-echo [1/2] Starting Backend Server (FastAPI)...
-start "Backend - FastAPI" cmd /k "cd backend && .\venv\Scripts\activate && python -m uvicorn main:app --reload --host 127.0.0.1 --port 8001"
+start "Backend Server" cmd /k "cd backend && echo Starting Backend on http://localhost:8001 && echo API Docs: http://localhost:8001/docs && echo. && python -m uvicorn main:app --reload --host 0.0.0.0 --port 8001"
 
-REM Wait a bit for backend to start
+echo Waiting for backend to start...
 timeout /t 5 /nobreak >nul
 
-REM Start Frontend in new window
-echo [2/2] Starting Frontend Server (React)...
-start "Frontend - React" cmd /k "cd frontend && npm start"
+echo.
+echo ========================================
+echo Step 2: Starting Frontend Server
+echo ========================================
+echo.
+
+start "Frontend Server" cmd /k "cd frontend && echo Starting Frontend on http://localhost:3001 && echo. && npm start"
 
 echo.
 echo ========================================
-echo Servers Starting...
+echo PROJECT STARTED!
 echo ========================================
 echo.
 echo Backend:  http://localhost:8001
-echo Frontend: http://localhost:3001
 echo API Docs: http://localhost:8001/docs
+echo Frontend: http://localhost:3001
 echo.
-echo Both servers will open in separate windows.
-echo Close those windows to stop the servers.
+echo Two windows have opened:
+echo   - Backend Server (Port 8001)
+echo   - Frontend Server (Port 3001)
 echo.
-echo Press any key to exit this window...
-pause >nul
-
+echo The frontend will open in your browser automatically.
+echo.
+echo To stop the servers:
+echo   - Close both terminal windows
+echo   - Or press Ctrl+C in each window
+echo.
+echo ========================================
+echo VALIDATION STATUS: ACTIVE ✅
+echo ========================================
+echo   ✅ Mammograms → Will be analyzed
+echo   ❌ Photos of people → Will be rejected
+echo   ❌ Flowers/objects → Will be rejected
+echo   ❌ Color images → Will be rejected
+echo ========================================
+echo.
+pause

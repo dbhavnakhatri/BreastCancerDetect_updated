@@ -17,7 +17,7 @@ function Overview({ results }) {
 
       <div className="img-grid">
         <div>
-          <p className="muted">Type of Cancer detection</p>
+          <p className="muted">Cancer detection</p>
           <img src={results.original} alt="Original" />
         </div>
 

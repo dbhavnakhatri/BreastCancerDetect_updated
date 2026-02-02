@@ -235,6 +235,18 @@ function ComparisonView({
 
           <div className="visual-tabs">
             <button
+              className={`visual-tab ${visualTab === "bbox" ? "active" : ""}`}
+              onClick={() => setVisualTab("bbox")}
+            >
+              Region Detection (BBox)
+            </button>
+            <button
+              className={`visual-tab ${visualTab === "original" ? "active" : ""}`}
+              onClick={() => setVisualTab("original")}
+            >
+              Cancer Detection
+            </button>
+            <button
               className={`visual-tab ${visualTab === "overlay" ? "active" : ""}`}
               onClick={() => setVisualTab("overlay")}
             >
@@ -245,18 +257,6 @@ function ComparisonView({
               onClick={() => setVisualTab("heatmap")}
             >
               Heatmap Only
-            </button>
-            <button
-              className={`visual-tab ${visualTab === "bbox" ? "active" : ""}`}
-              onClick={() => setVisualTab("bbox")}
-            >
-              Region Detection (BBox)
-            </button>
-            <button
-              className={`visual-tab ${visualTab === "original" ? "active" : ""}`}
-              onClick={() => setVisualTab("original")}
-            >
-              Type of Cancer detection
             </button>
           </div>
 

@@ -27,6 +27,19 @@ function FullComparisonView({
   const [analysisTab, setAnalysisTab] = useState(0); // Use index for multiple images
   const [detailsTab, setDetailsTab] = useState("clinical");
 
+  // Helper function to convert text to title case (handles hyphens, slashes, and special characters)
+  const toTitleCase = (str) => {
+    if (!str) return str;
+    return str
+      .split(/(\s+|-|\/)/g) // Split on spaces, hyphens, and slashes but keep delimiters
+      .map(word => {
+        if (word.match(/^(\s+|-|\/)$/)) return word; // Keep delimiters as-is
+        return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+      })
+      .join('');
+  };
+
+
   // Determine which results array to use
   const resultsArray = allResults.length > 0 ? allResults : [results, secondResults].filter(Boolean);
   const filesArray = files.length > 0 ? files : [file, secondFile].filter(Boolean);
@@ -61,6 +74,14 @@ function FullComparisonView({
     }
     return "";
   };
+const toProperCase = (text) => {
+  if (!text) return '';
+  return text
+    .toLowerCase()
+    .replace(/(^|\s|-)\w/g, (char) => char.toUpperCase());
+};
+
+
 
   // Helper function to get result class for current results
   const getCurrentResultClass = () => {
@@ -75,29 +96,74 @@ function FullComparisonView({
 
   return (
     <>
-      {/* Analysis Tab Buttons - Dynamic based on number of results */}
-      <div style={{ display: "flex", gap: "10px", marginBottom: "30px", justifyContent: "center", flexWrap: "wrap" }}>
+      {/* Analysis Tab Buttons - Simple, matching website theme */}
+      <div style={{ display: "flex", gap: "12px", marginBottom: "10px", justifyContent: "center", flexWrap: "wrap"}}>
         {resultsArray.map((res, index) => (
           <button
             key={index}
             onClick={() => setAnalysisTab(index)}
             style={{
-              padding: "12px 25px",
-              fontSize: "1rem",
-              fontWeight: analysisTab === index ? "700" : "600",
+              padding: "10px 20px",
+              fontSize: "0.95rem",
+              fontWeight: analysisTab === index ? "600" : "500",
               color: analysisTab === index ? "white" : "#666",
-              background: analysisTab === index ? "linear-gradient(135deg, #C2185B 0%, #AD1457 100%)" : "#f0f0f0",
+              background: res?.analyzing 
+                ? "#9C27B0" 
+                : res?.error
+                ? "#f44336"
+                : analysisTab === index 
+                ? "#C2185B" 
+                : "#f5f5f5",
               border: "none",
-              borderRadius: "10px",
+              borderRadius: "8px",
               cursor: "pointer",
-              transition: "all 0.3s ease",
-              boxShadow: analysisTab === index ? "0 4px 15px rgba(194, 24, 91, 0.4)" : "none",
+              transition: "all 0.2s ease",
+              boxShadow: analysisTab === index 
+                ? "0 4px 12px rgba(194, 24, 91, 0.25)" 
+                : "none",
+              opacity: res?.analyzing ? 0.9 : 1,
+            }}
+            onMouseEnter={(e) => {
+              if (analysisTab !== index && !res?.analyzing) {
+                e.currentTarget.style.background = "#e0e0e0";
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (analysisTab !== index && !res?.analyzing && !res?.error) {
+                e.currentTarget.style.background = "#f5f5f5";
+              }
             }}
           >
-            Image {index + 1} Analysis
+            {res?.analyzing ? (
+              <>
+                <span className="loader" style={{ 
+                  width: "14px", 
+                  height: "14px", 
+                  borderWidth: "2px",
+                  display: "inline-block",
+                  marginRight: "8px",
+                  verticalAlign: "middle"
+                }} />
+                Analyzing
+              </>
+            ) : res?.error ? (
+              <>
+                Image {index + 1} - Error
+              </>
+            ) : (
+              <>
+                Image {index + 1} Analysis
+              </>
+            )}
             {(res?.fileName || filesArray[index]?.name) && (
-              <span style={{ display: "block", fontSize: "0.7rem", opacity: 0.85, marginTop: "3px" }}>
-                {(res?.fileName || filesArray[index]?.name || '').substring(0, 15)}{(res?.fileName || filesArray[index]?.name || '').length > 15 ? '...' : ''}
+              <span style={{ 
+                display: "block", 
+                fontSize: "0.75rem", 
+                opacity: analysisTab === index ? 0.95 : 0.7, 
+                marginTop: "4px",
+                fontWeight: "400",
+              }}>
+                {(res?.fileName || filesArray[index]?.name || '').substring(0, 20)}{(res?.fileName || filesArray[index]?.name || '').length > 20 ? '...' : ''}
               </span>
             )}
           </button>
@@ -106,15 +172,72 @@ function FullComparisonView({
 
       {/* Header */}
       <div className="result-header" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
-        <h2 className={`result-title ${getCurrentResultClass()}`}>
-          {currentResults?.result || "Analysis Result"}
-        </h2>
-        <p className={`risk-pill ${getCurrentRiskClass()}`}>
-          Risk Level:&nbsp;
-          <strong>{currentResults?.risk || "Not available"}</strong>
-        </p>
+        {currentResults?.analyzing ? (
+          <>
+            <h2 className="result-title" style={{ color: '#FFA726' }}>
+              <span className="loader" style={{ 
+                width: "24px", 
+                height: "24px", 
+                borderWidth: "3px",
+                display: "inline-block",
+                marginRight: "12px",
+                verticalAlign: "middle"
+              }} />
+              Analyzing Image...
+            </h2>
+            <div style={{ 
+              background: '#FFF8E1', 
+              border: '2px solid #FFA726', 
+              borderRadius: '10px', 
+              padding: '20px', 
+              marginTop: '15px',
+              maxWidth: '600px'
+            }}>
+              <p style={{ color: '#F57C00', fontSize: '1.1rem', fontWeight: '600', marginBottom: '10px' }}>
+                {currentResults.fileName}
+              </p>
+              <p style={{ color: '#666', fontSize: '0.95rem' }}>
+                Please wait while we analyze this image...
+              </p>
+            </div>
+          </>
+        ) : currentResults?.error ? (
+          <>
+            <h2 className="result-title" style={{ color: '#ff4444' }}>
+              ❌ Validation Failed
+            </h2>
+            <div style={{ 
+              background: '#fff3f3', 
+              border: '2px solid #ff4444', 
+              borderRadius: '10px', 
+              padding: '20px', 
+              marginTop: '15px',
+              maxWidth: '600px'
+            }}>
+              <p style={{ color: '#cc0000', fontSize: '1.1rem', fontWeight: '600', marginBottom: '10px' }}>
+                {currentResults.fileName}
+              </p>
+              <p style={{ color: '#666', fontSize: '0.95rem' }}>
+                {currentResults.errorMessage}
+              </p>
+            </div>
+          </>
+        ) : (
+          <>
+            <h2 className={`result-title ${getCurrentResultClass()}`}>
+              {currentResults?.result || "Analysis Result"}
+            </h2>
+            <p className={`risk-pill ${getCurrentRiskClass()}`}>
+              Risk Level:&nbsp;
+              <strong>{currentResults?.risk || "Not available"}</strong>
+            </p>
+          </>
+        )}
       </div>
 
+      {/* Only show analysis sections if no error and not analyzing */}
+      {!currentResults?.error && !currentResults?.analyzing && (
+        <>
       {/* Prediction Metrics Section */}
       <section className="section">
         <h3 className="section-title">Prediction Metrics</h3>
@@ -150,17 +273,17 @@ function FullComparisonView({
         </p>
 
         <div className="visual-tabs">
+          <button className={`visual-tab ${visualTab === "bbox" ? "active" : ""}`} onClick={() => setVisualTab("bbox")}>
+            Region Detection (BBox)
+          </button>
+          <button className={`visual-tab ${visualTab === "original" ? "active" : ""}`} onClick={() => setVisualTab("original")}>
+            Cancer Detection
+          </button>
           <button className={`visual-tab ${visualTab === "overlay" ? "active" : ""}`} onClick={() => setVisualTab("overlay")}>
             Heatmap Overlay
           </button>
           <button className={`visual-tab ${visualTab === "heatmap" ? "active" : ""}`} onClick={() => setVisualTab("heatmap")}>
             Heatmap Only
-          </button>
-          <button className={`visual-tab ${visualTab === "bbox" ? "active" : ""}`} onClick={() => setVisualTab("bbox")}>
-            Region Detection (BBox)
-          </button>
-          <button className={`visual-tab ${visualTab === "original" ? "active" : ""}`} onClick={() => setVisualTab("original")}>
-            Type of Cancer detection
           </button>
         </div>
 
@@ -210,6 +333,28 @@ function FullComparisonView({
 
           {/* Detailed Analysis Information */}
           <div className="results-info-card">
+            {/* Row 3: Image Quality - Full Width */}
+                {currentResults.findings.comprehensive_analysis.image_quality && (
+                  <div style={{ padding: '14px', background: 'linear-gradient(135deg, #ECEFF1 0%, #CFD8DC 100%)', borderRadius: '12px', boxShadow: '0 2px 8px rgba(69, 90, 100, 0.15)', marginBottom: '14px' }}>
+                    <div style={{ fontWeight: '700', color: '#455A64', marginBottom: '10px', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ fontSize: '1.1rem' }}>📷</span> Image Quality Assessment
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', fontSize: '0.85rem' }}>
+                      <div style={{ padding: '10px 12px', background: 'rgba(255,255,255,0.7)', borderRadius: '8px', textAlign: 'center' }}>
+                        <div style={{ color: '#666', fontSize: '0.75rem', marginBottom: '4px' }}>Overall Quality</div>
+                        <strong style={{ color: '#455A64', fontSize: '1.1rem' }}>{currentResults.findings.comprehensive_analysis.image_quality.overall_score}%</strong>
+                      </div>
+                      <div style={{ padding: '10px 12px', background: 'rgba(255,255,255,0.7)', borderRadius: '8px', textAlign: 'center' }}>
+                        <div style={{ color: '#666', fontSize: '0.75rem', marginBottom: '4px' }}>Positioning</div>
+                        <strong style={{ color: '#455A64', fontSize: '1rem' }}>{toTitleCase(currentResults.findings.comprehensive_analysis.image_quality.positioning)}</strong>
+                      </div>
+                      <div style={{ padding: '10px 12px', background: 'rgba(255,255,255,0.7)', borderRadius: '8px', textAlign: 'center' }}>
+                        <div style={{ color: '#666', fontSize: '0.75rem', marginBottom: '4px' }}>Technical Adequacy</div>
+                        <strong style={{ color: '#455A64', fontSize: '1rem' }}>{toTitleCase(currentResults.findings.comprehensive_analysis.image_quality.technical_adequacy)}</strong>
+                      </div>
+                    </div>
+                  </div>
+                )}
             <h4>Understanding Your Results</h4>
 
             {/* Comprehensive Image Analysis Section */}
@@ -230,8 +375,8 @@ function FullComparisonView({
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '0.85rem' }}>
                         <div style={{ padding: '6px 8px', background: 'rgba(255,255,255,0.6)', borderRadius: '6px' }}><span style={{ color: '#666' }}>Category:</span> <strong style={{ color: '#1565C0' }}>Type {currentResults.findings.comprehensive_analysis.breast_density.category}</strong></div>
                         <div style={{ padding: '6px 8px', background: 'rgba(255,255,255,0.6)', borderRadius: '6px' }}><span style={{ color: '#666' }}>Density:</span> <strong style={{ color: '#1565C0' }}>{currentResults.findings.comprehensive_analysis.breast_density.density_percentage}%</strong></div>
-                        <div style={{ padding: '6px 8px', background: 'rgba(255,255,255,0.6)', borderRadius: '6px' }}><span style={{ color: '#666' }}>Sensitivity:</span> <strong>{currentResults.findings.comprehensive_analysis.breast_density.sensitivity}</strong></div>
-                        <div style={{ padding: '6px 8px', background: 'rgba(255,255,255,0.6)', borderRadius: '6px' }}><span style={{ color: '#666' }}>Masking Risk:</span> <strong>{currentResults.findings.comprehensive_analysis.breast_density.masking_risk}</strong></div>
+                        <div style={{ padding: '6px 8px', background: 'rgba(255,255,255,0.6)', borderRadius: '6px' }}><span style={{ color: '#666' }}>Sensitivity:</span> <strong>{toTitleCase(currentResults.findings.comprehensive_analysis.breast_density.sensitivity)}</strong></div>
+                        <div style={{ padding: '6px 8px', background: 'rgba(255,255,255,0.6)', borderRadius: '6px' }}><span style={{ color: '#666' }}>Masking Risk:</span> <strong>{toTitleCase(currentResults.findings.comprehensive_analysis.breast_density.masking_risk)}</strong></div>
                       </div>
                       <div style={{ marginTop: '10px', fontSize: '0.8rem', color: '#1565C0', fontStyle: 'italic', padding: '6px 8px', background: 'rgba(255,255,255,0.4)', borderRadius: '6px' }}>{currentResults.findings.comprehensive_analysis.breast_density.description}</div>
                     </div>
@@ -244,7 +389,7 @@ function FullComparisonView({
                         <span style={{ fontSize: '1.1rem' }}>🧬</span> Tissue Texture Analysis
                       </div>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '0.85rem' }}>
-                        <div style={{ padding: '6px 8px', background: 'rgba(255,255,255,0.6)', borderRadius: '6px' }}><span style={{ color: '#666' }}>Pattern:</span> <strong style={{ color: '#7B1FA2' }}>{currentResults.findings.comprehensive_analysis.tissue_texture.pattern}</strong></div>
+                        <div style={{ padding: '6px 8px', background: 'rgba(255,255,255,0.6)', borderRadius: '6px' }}><span style={{ color: '#666' }}>Pattern:</span> <strong style={{ color: '#7B1FA2' }}>{toTitleCase(currentResults.findings.comprehensive_analysis.tissue_texture.pattern)}</strong></div>
                         <div style={{ padding: '6px 8px', background: 'rgba(255,255,255,0.6)', borderRadius: '6px' }}><span style={{ color: '#666' }}>Uniformity:</span> <strong style={{ color: '#7B1FA2' }}>{currentResults.findings.comprehensive_analysis.tissue_texture.uniformity_score}%</strong></div>
                       </div>
                       <div style={{ marginTop: '10px', fontSize: '0.8rem', color: '#7B1FA2', fontStyle: 'italic', padding: '6px 8px', background: 'rgba(255,255,255,0.4)', borderRadius: '6px' }}>{currentResults.findings.comprehensive_analysis.tissue_texture.clinical_note}</div>
@@ -261,7 +406,7 @@ function FullComparisonView({
                         <span style={{ fontSize: '1.1rem' }}>⚖️</span> Symmetry
                       </div>
                       <div style={{ display: 'grid', gap: '6px', fontSize: '0.85rem' }}>
-                        <div style={{ padding: '6px 8px', background: 'rgba(255,255,255,0.6)', borderRadius: '6px' }}><span style={{ color: '#666' }}>Assessment:</span> <strong style={{ color: '#2E7D32' }}>{currentResults.findings.comprehensive_analysis.symmetry.assessment}</strong></div>
+                        <div style={{ padding: '6px 8px', background: 'rgba(255,255,255,0.6)', borderRadius: '6px' }}><span style={{ color: '#666' }}>Assessment:</span> <strong style={{ color: '#2E7D32' }}>{toTitleCase(currentResults.findings.comprehensive_analysis.symmetry.assessment)}</strong></div>
                         <div style={{ padding: '6px 8px', background: 'rgba(255,255,255,0.6)', borderRadius: '6px' }}><span style={{ color: '#666' }}>Score:</span> <strong style={{ color: '#2E7D32' }}>{currentResults.findings.comprehensive_analysis.symmetry.symmetry_score}%</strong></div>
                       </div>
                       <div style={{ marginTop: '8px', fontSize: '0.78rem', color: '#2E7D32', fontStyle: 'italic' }}>{currentResults.findings.comprehensive_analysis.symmetry.clinical_significance}</div>
@@ -275,9 +420,9 @@ function FullComparisonView({
                         <span style={{ fontSize: '1.1rem' }}>👁️</span> Skin & Nipple
                       </div>
                       <div style={{ display: 'grid', gap: '6px', fontSize: '0.85rem' }}>
-                        <div style={{ padding: '6px 8px', background: 'rgba(255,255,255,0.6)', borderRadius: '6px' }}><span style={{ color: '#666' }}>Skin:</span> <strong style={{ color: '#E65100' }}>{currentResults.findings.comprehensive_analysis.skin_nipple.skin_status}</strong></div>
-                        <div style={{ padding: '6px 8px', background: 'rgba(255,255,255,0.6)', borderRadius: '6px' }}><span style={{ color: '#666' }}>Concern:</span> <strong style={{ color: '#E65100' }}>{currentResults.findings.comprehensive_analysis.skin_nipple.skin_concern_level}</strong></div>
-                        <div style={{ padding: '6px 8px', background: 'rgba(255,255,255,0.6)', borderRadius: '6px' }}><span style={{ color: '#666' }}>Nipple:</span> <strong>{currentResults.findings.comprehensive_analysis.skin_nipple.nipple_retraction}</strong></div>
+                        <div style={{ padding: '6px 8px', background: 'rgba(255,255,255,0.6)', borderRadius: '6px' }}><span style={{ color: '#666' }}>Skin:</span> <strong style={{ color: '#E65100' }}>{toTitleCase(currentResults.findings.comprehensive_analysis.skin_nipple.skin_status)}</strong></div>
+                        <div style={{ padding: '6px 8px', background: 'rgba(255,255,255,0.6)', borderRadius: '6px' }}><span style={{ color: '#666' }}>Concern:</span> <strong style={{ color: '#E65100' }}>{toTitleCase(currentResults.findings.comprehensive_analysis.skin_nipple.skin_concern_level)}</strong></div>
+                        <div style={{ padding: '6px 8px', background: 'rgba(255,255,255,0.6)', borderRadius: '6px' }}><span style={{ color: '#666' }}>Nipple:</span> <strong>{toTitleCase(currentResults.findings.comprehensive_analysis.skin_nipple.nipple_retraction)}</strong></div>
                       </div>
                     </div>
                   )}
@@ -289,7 +434,7 @@ function FullComparisonView({
                         <span style={{ fontSize: '1.1rem' }}>🩸</span> Vascular Pattern
                       </div>
                       <div style={{ display: 'grid', gap: '6px', fontSize: '0.85rem' }}>
-                        <div style={{ padding: '6px 8px', background: 'rgba(255,255,255,0.6)', borderRadius: '6px' }}><span style={{ color: '#666' }}>Pattern:</span> <strong style={{ color: '#C2185B' }}>{currentResults.findings.comprehensive_analysis.vascular_patterns.pattern}</strong></div>
+                        <div style={{ padding: '6px 8px', background: 'rgba(255,255,255,0.6)', borderRadius: '6px' }}><span style={{ color: '#666' }}>Pattern:</span> <strong style={{ color: '#C2185B' }}>{toTitleCase(currentResults.findings.comprehensive_analysis.vascular_patterns.pattern)}</strong></div>
                         <div style={{ padding: '6px 8px', background: 'rgba(255,255,255,0.6)', borderRadius: '6px' }}><span style={{ color: '#666' }}>Score:</span> <strong style={{ color: '#C2185B' }}>{currentResults.findings.comprehensive_analysis.vascular_patterns.vascular_score}%</strong></div>
                       </div>
                       <div style={{ marginTop: '8px', fontSize: '0.78rem', color: '#C2185B', fontStyle: 'italic' }}>{currentResults.findings.comprehensive_analysis.vascular_patterns.clinical_note}</div>
@@ -297,31 +442,8 @@ function FullComparisonView({
                   )}
                 </div>
                 
-                {/* Row 3: Image Quality - Full Width */}
-                {currentResults.findings.comprehensive_analysis.image_quality && (
-                  <div style={{ padding: '14px', background: 'linear-gradient(135deg, #ECEFF1 0%, #CFD8DC 100%)', borderRadius: '12px', boxShadow: '0 2px 8px rgba(69, 90, 100, 0.15)', marginBottom: '14px' }}>
-                    <div style={{ fontWeight: '700', color: '#455A64', marginBottom: '10px', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <span style={{ fontSize: '1.1rem' }}>📷</span> Image Quality Assessment
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', fontSize: '0.85rem' }}>
-                      <div style={{ padding: '10px 12px', background: 'rgba(255,255,255,0.7)', borderRadius: '8px', textAlign: 'center' }}>
-                        <div style={{ color: '#666', fontSize: '0.75rem', marginBottom: '4px' }}>Overall Quality</div>
-                        <strong style={{ color: '#455A64', fontSize: '1.1rem' }}>{currentResults.findings.comprehensive_analysis.image_quality.overall_score}%</strong>
-                      </div>
-                      <div style={{ padding: '10px 12px', background: 'rgba(255,255,255,0.7)', borderRadius: '8px', textAlign: 'center' }}>
-                        <div style={{ color: '#666', fontSize: '0.75rem', marginBottom: '4px' }}>Positioning</div>
-                        <strong style={{ color: '#455A64', fontSize: '1rem' }}>{currentResults.findings.comprehensive_analysis.image_quality.positioning}</strong>
-                      </div>
-                      <div style={{ padding: '10px 12px', background: 'rgba(255,255,255,0.7)', borderRadius: '8px', textAlign: 'center' }}>
-                        <div style={{ color: '#666', fontSize: '0.75rem', marginBottom: '4px' }}>Technical Adequacy</div>
-                        <strong style={{ color: '#455A64', fontSize: '1rem' }}>{currentResults.findings.comprehensive_analysis.image_quality.technical_adequacy}</strong>
-                      </div>
-                    </div>
-                  </div>
-                )}
-                
                 {/* Row 4: Calcification Analysis */}
-                {currentResults.findings.comprehensive_analysis.calcification_analysis?.detected && (
+                {currentResults?.findings?.comprehensive_analysis?.calcification_analysis?.detected && (
                   <div style={{ padding: '14px', background: 'linear-gradient(135deg, #FFEBEE 0%, #FFCDD2 100%)', borderRadius: '12px', border: '2px solid #EF5350', boxShadow: '0 2px 12px rgba(239, 83, 80, 0.25)' }}>
                     <div style={{ fontWeight: '700', color: '#C62828', marginBottom: '12px', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
                       <span style={{ fontSize: '1.2rem' }}>⚠️</span> Calcification Analysis - Attention Required
@@ -333,11 +455,11 @@ function FullComparisonView({
                       </div>
                       <div style={{ padding: '10px 12px', background: 'rgba(255,255,255,0.8)', borderRadius: '8px', textAlign: 'center' }}>
                         <div style={{ color: '#666', fontSize: '0.75rem', marginBottom: '4px' }}>Distribution</div>
-                        <strong style={{ color: '#C62828', fontSize: '0.95rem' }}>{currentResults.findings.comprehensive_analysis.calcification_analysis.distribution}</strong>
+                        <strong style={{ color: '#C62828', fontSize: '0.95rem' }}>{toTitleCase(currentResults.findings.comprehensive_analysis.calcification_analysis.distribution)}</strong>
                       </div>
                       <div style={{ padding: '10px 12px', background: 'rgba(255,255,255,0.8)', borderRadius: '8px', textAlign: 'center' }}>
                         <div style={{ color: '#666', fontSize: '0.75rem', marginBottom: '4px' }}>Morphology</div>
-                        <strong style={{ color: '#C62828', fontSize: '0.95rem' }}>{currentResults.findings.comprehensive_analysis.calcification_analysis.morphology}</strong>
+                        <strong style={{ color: '#C62828', fontSize: '0.95rem' }}>{toTitleCase(currentResults.findings.comprehensive_analysis.calcification_analysis.morphology)}</strong>
                       </div>
                       <div style={{ padding: '10px 12px', background: 'rgba(255,255,255,0.8)', borderRadius: '8px', textAlign: 'center' }}>
                         <div style={{ color: '#666', fontSize: '0.75rem', marginBottom: '4px' }}>BI-RADS</div>
@@ -362,7 +484,7 @@ function FullComparisonView({
                   {currentResults.findings.regions.map((region, idx) => (
                     <div key={idx} className="region-card" style={{ marginBottom: '16px' }}>
                       <div className="region-card-header">
-                        Region {region.id}: {region.cancer_type || 'Abnormality'}
+                                                         Region {region.id}: {toProperCase(region.cancer_type) || 'Abnormality'}
                         {region.birads_region && (
                           <span style={{ marginLeft: '10px', padding: '2px 8px', background: '#E91E63', color: 'white', borderRadius: '4px', fontSize: '0.75rem' }}>
                             BI-RADS {region.birads_region}
@@ -372,26 +494,33 @@ function FullComparisonView({
                       <div className="region-card-grid" style={{ flex: '1' }}>
                         <div style={{ gridColumn: '1 / -1', paddingBottom: '8px', borderBottom: '1px solid rgba(156, 43, 109, 0.15)' }}>
                           <span style={{ fontSize: '0.75rem', color: '#8B5A8D' }}>Type:</span>
-                          <strong style={{ fontSize: '0.95rem', color: '#9C2B6D' }}> {region.cancer_type || 'Unknown'}</strong>
+                          <strong style={{ fontSize: '0.95rem', color: '#9C2B6D' }}> {toProperCase(region.cancer_type) || 'Unknown'}</strong>
                         </div>
-                        <div><span>Location:</span> <strong>{region.location?.quadrant || 'Unknown'}</strong></div>
+<div>
+  <span>Location:</span>{' '}
+  <strong>
+    {toProperCase(region.location?.quadrant) || 'Unknown'}
+  </strong>
+</div>
+
+
                         <div><span>Confidence:</span> <strong style={{ color: region.confidence > 70 ? '#DC2626' : '#059669' }}>{region.confidence?.toFixed(1)}%</strong></div>
-                        <div><span>Morphology:</span> <strong>{region.morphology?.shape || '—'}</strong></div>
-                        <div><span>Margin:</span> <strong>{region.margin?.type || '—'}</strong></div>
-                        <div><span>Margin Risk:</span> <strong style={{ color: region.margin?.risk_level === 'High' ? '#DC2626' : region.margin?.risk_level === 'Moderate' ? '#F59E0B' : '#059669' }}>{region.margin?.risk_level || '—'}</strong></div>
-                        <div><span>Density:</span> <strong>{region.density?.level || '—'}</strong></div>
-                        <div><span>Vascularity:</span> <strong>{region.vascularity?.assessment || '—'}</strong></div>
-                        <div><span>Tissue:</span> <strong>{region.tissue_composition?.type || '—'}</strong></div>
+                        <div><span>Morphology:</span> <strong>{toTitleCase(region.morphology?.shape) || '—'}</strong></div>
+                        <div><span>Margin:</span> <strong>{toTitleCase(region.margin?.type) || '—'}</strong></div>
+                        <div><span>Margin Risk:</span> <strong style={{ color: region.margin?.risk_level === 'High' ? '#DC2626' : region.margin?.risk_level === 'Moderate' ? '#F59E0B' : '#059669' }}>{toTitleCase(region.margin?.risk_level) || '—'}</strong></div>
+                        <div><span>Density:</span> <strong>{toProperCase(region.density?.level) || '—'}</strong></div>
+                        <div><span>Vascularity:</span> <strong>{toTitleCase(region.vascularity?.assessment) || '—'}</strong></div>
+                        <div><span>Tissue:</span> <strong>{toTitleCase(region.tissue_composition?.type) || '—'}</strong></div>
                         {region.calcification_details && (
                           <>
-                            <div><span>Calc. Type:</span> <strong>{region.calcification_details.morphology || '—'}</strong></div>
-                            <div><span>Calc. Dist:</span> <strong>{region.calcification_details.distribution || '—'}</strong></div>
+                            <div><span>Calc. Type:</span> <strong>{toTitleCase(region.calcification_details.morphology) || '—'}</strong></div>
+                            <div><span>Calc. Dist:</span> <strong>{toTitleCase(region.calcification_details.distribution) || '—'}</strong></div>
                           </>
                         )}
                         <div>
                           <span>Severity:</span>{' '}
                           <span className={`severity-badge ${region.severity || 'low'}`}>
-                            {region.severity || 'low'}
+                             {toProperCase(region.severity || 'low')}
                           </span>
                         </div>
                         <div><span>Area:</span> <strong>{region.size?.area_percentage?.toFixed(2)}%</strong></div>
@@ -866,6 +995,8 @@ function FullComparisonView({
           )}
         </div>
       </section>
+      </>
+      )}
 
       {/* Download Report Button - Shows respective image report based on active tab */}
       <div style={{ display: "flex", justifyContent: "center", marginTop: "30px" }}>

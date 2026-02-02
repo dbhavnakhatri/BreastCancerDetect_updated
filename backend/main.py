@@ -28,6 +28,7 @@ from PIL import Image
 
 from grad_cam import create_gradcam_visualization, generate_mammogram_view_analysis
 from report_generator import generate_report_pdf
+from mammogram_validator import validate_mammogram_image
 
 # Database imports
 auth_router = None
@@ -661,9 +662,30 @@ async def analyze_image(
         image = Image.open(io.BytesIO(data)).convert("RGB")
     except Exception:
         raise HTTPException(status_code=400, detail="Unable to read image file.")
+    
+    # ⚠️ CRITICAL: Validate that the image is actually a mammogram
+    # This prevents analyzing photos of people and other non-medical images
+    try:
+        is_valid, error_message = validate_mammogram_image(image, file.content_type)
+        if not is_valid:
+            print(f"❌ REJECTED IMAGE: {error_message}")
+            raise HTTPException(
+                status_code=400, 
+                detail=error_message
+            )
+        
+        print(f"✅ Image validated as mammogram - proceeding with analysis")
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"⚠️ Validation error: {e}")
+        # If validation fails, allow the image through (fail-safe)
+        print("⚠️ Validation failed, proceeding anyway...")
 
     try:
+        print(f"🔍 Starting analysis for {file.filename}...")
         analysis, images = run_full_analysis(image, filename=file.filename)
+        print(f"✅ Analysis completed successfully")
     except Exception as exc:
         import traceback
         traceback.print_exc()
@@ -792,6 +814,18 @@ async def generate_report(
         image = Image.open(io.BytesIO(data)).convert("RGB")
     except Exception:
         raise HTTPException(status_code=400, detail="Unable to read image file.")
+    
+    # ⚠️ CRITICAL: Validate that the image is actually a mammogram
+    # This prevents analyzing photos of people and other non-medical images
+    is_valid, error_message = validate_mammogram_image(image, file.content_type)
+    if not is_valid:
+        print(f"❌ REJECTED IMAGE: {error_message}")
+        raise HTTPException(
+            status_code=400, 
+            detail=error_message
+        )
+    
+    print(f"✅ Image validated as mammogram - proceeding with report generation")
 
     try:
         analysis, images = run_full_analysis(image, filename=file.filename)

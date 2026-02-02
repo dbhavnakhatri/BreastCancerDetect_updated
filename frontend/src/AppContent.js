@@ -18,6 +18,9 @@ const getDefaultApiBase = () => {
     }
   }
 
+
+
+
   // For production deployment, check environment variable
   const envUrl = process.env.REACT_APP_API_BASE_URL;
   if (envUrl && envUrl.trim().length > 0) {
@@ -37,6 +40,8 @@ const buildEndpoint = (base, endpoint) => {
   const safeEndpoint = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
   return `${safeBase}${safeEndpoint}`;
 };
+
+
 
 const asDataUrl = (value) => (value ? `data:image/png;base64,${value}` : null);
 
@@ -63,18 +68,35 @@ function AppContent() {
   const [errorMessage, setErrorMessage] = useState("");
   const [isZoomed, setIsZoomed] = useState(false);
   const [uploadHistory, setUploadHistory] = useState([]);
+  const [selectedRegion, setSelectedRegion] = useState(null);
+  const [fullscreenRegion, setFullscreenRegion] = useState(null);
 
   // Zoom functionality
   const zoomImageRef = useRef(null);
 
+  const toProperCase = (text) => {
+    if (!text) return '';
+    return text
+      .toLowerCase()
+      .replace(/\b\w|-\w/g, (char) => char.toUpperCase());
+  };
+
+
   // Load upload history from localStorage on mount
   useEffect(() => {
-    const savedHistory = localStorage.getItem('uploadHistory');
-    if (savedHistory) {
+    try {
+      const savedHistory = localStorage.getItem('uploadHistory');
+      if (savedHistory) {
+        const parsed = JSON.parse(savedHistory);
+        setUploadHistory(parsed);
+      }
+    } catch (e) {
+      console.error('Error loading upload history:', e);
+      // Clear corrupted data
       try {
-        setUploadHistory(JSON.parse(savedHistory));
-      } catch (e) {
-        console.error('Error loading upload history:', e);
+        localStorage.removeItem('uploadHistory');
+      } catch (clearError) {
+        console.error('Failed to clear corrupted history:', clearError);
       }
     }
   }, []);
@@ -91,7 +113,27 @@ function AppContent() {
     setUploadHistory(prev => {
       // Keep only last 5 entries
       const updated = [newEntry, ...prev.filter(h => h.name !== fileName)].slice(0, 5);
-      localStorage.setItem('uploadHistory', JSON.stringify(updated));
+
+      try {
+        localStorage.setItem('uploadHistory', JSON.stringify(updated));
+      } catch (error) {
+        // If storage quota exceeded, clear old data and try again
+        if (error.name === 'QuotaExceededError') {
+          console.warn('Storage quota exceeded, clearing old history...');
+          try {
+            // Keep only the newest entry
+            const minimal = [newEntry];
+            localStorage.setItem('uploadHistory', JSON.stringify(minimal));
+            return minimal;
+          } catch (e) {
+            // If still fails, clear everything and continue without storage
+            console.error('Failed to save to localStorage:', e);
+            localStorage.removeItem('uploadHistory');
+            return [newEntry];
+          }
+        }
+      }
+
       return updated;
     });
   };
@@ -100,7 +142,13 @@ function AppContent() {
   const removeFromHistory = (id) => {
     setUploadHistory(prev => {
       const updated = prev.filter(h => h.id !== id);
-      localStorage.setItem('uploadHistory', JSON.stringify(updated));
+
+      try {
+        localStorage.setItem('uploadHistory', JSON.stringify(updated));
+      } catch (error) {
+        console.error('Failed to update localStorage:', error);
+      }
+
       return updated;
     });
   };
@@ -154,6 +202,7 @@ function AppContent() {
       img.style.transform = 'scale(1)';
       img.style.transformOrigin = 'center center';
       setIsZoomed(false);
+      setSelectedRegion(null);
     } else {
       // Zoom
       const rect = img.getBoundingClientRect();
@@ -165,6 +214,106 @@ function AppContent() {
     }
   };
 
+  // Zoom to specific region when clicked from list - now opens fullscreen
+  const zoomToRegion = (region) => {
+    const img = zoomImageRef.current;
+    if (!img) return;
+
+    // If clicking the same region that's already selected, close fullscreen
+    if (selectedRegion === region.id && fullscreenRegion) {
+      setFullscreenRegion(null);
+      setSelectedRegion(null);
+      return;
+    }
+
+    // Open fullscreen view with the region
+    setSelectedRegion(region.id);
+    setFullscreenRegion(region);
+  };
+
+
+  // Helper function to render green overlay for selected region
+  const renderGreenOverlay = () => {
+    if (!selectedRegion || !results.findings?.regions || (visualTab !== 'bbox' && visualTab !== 'original')) {
+      return null;
+    }
+
+    const region = results.findings.regions.find(r => r.id === selectedRegion);
+    if (!region || !region.bbox) return null;
+
+    const img = zoomImageRef.current;
+    if (!img) return null;
+
+    let x1, y1, x2, y2;
+    if (Array.isArray(region.bbox)) {
+      [x1, y1, x2, y2] = region.bbox;
+    } else {
+      x1 = region.bbox.x1;
+      y1 = region.bbox.y1;
+      x2 = region.bbox.x2;
+      y2 = region.bbox.y2;
+    }
+
+    const imgNaturalWidth = img.naturalWidth;
+    const imgNaturalHeight = img.naturalHeight;
+
+    if (!imgNaturalWidth || !imgNaturalHeight) return null;
+
+    // Get the actual displayed dimensions of the image
+    const displayedWidth = img.clientWidth;
+    const displayedHeight = img.clientHeight;
+
+    // Calculate the scale factor between natural and displayed size
+    const scaleX = displayedWidth / imgNaturalWidth;
+    const scaleY = displayedHeight / imgNaturalHeight;
+
+    // Use the smaller scale to maintain aspect ratio (object-fit: contain behavior)
+    const scale = Math.min(scaleX, scaleY);
+
+    // Calculate actual displayed image dimensions
+    const actualDisplayWidth = imgNaturalWidth * scale;
+    const actualDisplayHeight = imgNaturalHeight * scale;
+
+    // Calculate offset (letterboxing) - image is centered
+    const offsetX = (displayedWidth - actualDisplayWidth) / 2;
+    const offsetY = (displayedHeight - actualDisplayHeight) / 2;
+
+    // Convert bbox coordinates to displayed pixels
+    const displayX1 = x1 * scale + offsetX;
+    const displayY1 = y1 * scale + offsetY;
+    const displayX2 = x2 * scale + offsetX;
+    const displayY2 = y2 * scale + offsetY;
+
+    const displayBoxWidth = displayX2 - displayX1;
+    const displayBoxHeight = displayY2 - displayY1;
+
+    console.log('Green overlay positioning:', {
+      bbox: { x1, y1, x2, y2 },
+      naturalDimensions: { width: imgNaturalWidth, height: imgNaturalHeight },
+      displayedDimensions: { width: displayedWidth, height: displayedHeight },
+      scale: scale,
+      actualDisplay: { width: actualDisplayWidth, height: actualDisplayHeight },
+      offset: { x: offsetX, y: offsetY },
+      displayBox: { x1: displayX1, y1: displayY1, x2: displayX2, y2: displayY2, width: displayBoxWidth, height: displayBoxHeight }
+    });
+
+    return (
+      <div
+        style={{
+          position: 'absolute',
+          left: `${displayX1}px`,
+          top: `${displayY1}px`,
+          width: `${displayBoxWidth}px`,
+          height: `${displayBoxHeight}px`,
+          border: '6px solid #00FF00',
+          boxShadow: '0 0 15px rgba(0, 255, 0, 0.9)',
+          pointerEvents: 'none',
+          zIndex: 5,
+          boxSizing: 'border-box'
+        }}
+      />
+    );
+  };
 
   const handleLogout = () => {
     logout();
@@ -309,7 +458,7 @@ function AppContent() {
     setSecondFile(null);
     setFiles([]);
     setAllResults([]);
-    setVisualTab("overlay");
+    setVisualTab("bbox");
     setDetailsTab("clinical");
     setStatusMessage("");
     setErrorMessage("");
@@ -376,45 +525,107 @@ function AppContent() {
     setIsAnalyzing(true);
     setStatusMessage(`Analyzing ${files.length} image(s)...`);
     setErrorMessage("");
-    setAllResults([]);
 
-    try {
-      const results = [];
-      for (let i = 0; i < files.length; i++) {
+    // Initialize all results with "analyzing" placeholders immediately
+    const initialResults = files.map((file, index) => ({
+      fileName: file.name,
+      index: index,
+      analyzing: true,
+      original: null,
+      overlay: null,
+      heatmap: null,
+      bbox: null,
+      cancer_type: null,
+    }));
+
+    setAllResults(initialResults); // Set all placeholders at once
+    setAnalysisDone(false); // Don't show results section yet
+
+    const results = [...initialResults]; // Work with a copy
+    const errors = [];
+
+    for (let i = 0; i < files.length; i++) {
+      try {
         setStatusMessage(`Analyzing image ${i + 1} of ${files.length}...`);
         const result = await analyzeSingleFile(files[i], i);
-        results.push(result);
-      }
 
-      setAllResults(results);
+        // Replace placeholder with actual result
+        results[i] = result;
+        setAllResults([...results]); // Update UI with actual result
 
-      // For backward compatibility, set first two results
-      if (results.length > 0) {
-        setResults(results[0]);
-        setFile(files[0]);
-      }
-      if (results.length > 1) {
-        setSecondResults(results[1]);
-        setSecondFile(files[1]);
-      }
+        // Show results section after FIRST image completes
+        if (i === 0) {
+          setAnalysisDone(true); // Now show the results section
+          setVisualTab("bbox");
+          setDetailsTab("clinical");
+        }
 
-      setAnalysisDone(true);
-      setVisualTab("overlay");
-      setDetailsTab("clinical");
-      setStatusMessage("Analysis complete.");
-    } catch (error) {
-      console.error("Analysis error:", error);
-      let errorMsg = "Backend not reachable.";
-      if (error.name === 'AbortError') {
-        errorMsg = "Request timed out. Please try again.";
-      } else if (error.message) {
-        errorMsg = error.message;
+        console.log(`✅ Successfully analyzed: ${files[i].name}`);
+
+        // For backward compatibility, set first two successful results
+        const successfulResults = results.filter(r => !r.error && !r.analyzing);
+        if (successfulResults.length === 1) {
+          setResults(successfulResults[0]);
+          const successIndex = results.findIndex(r => !r.error && !r.analyzing);
+          if (successIndex >= 0) {
+            setFile(files[successIndex]);
+          }
+        }
+        if (successfulResults.length === 2) {
+          setSecondResults(successfulResults[1]);
+          const secondSuccessIndex = results.findIndex((r, idx) => !r.error && !r.analyzing && idx > results.findIndex(r => !r.error && !r.analyzing));
+          if (secondSuccessIndex >= 0) {
+            setSecondFile(files[secondSuccessIndex]);
+          }
+        }
+
+      } catch (error) {
+        console.error(`❌ Failed to analyze ${files[i].name}:`, error);
+
+        // Replace placeholder with error result
+        const errorResult = {
+          fileName: files[i].name,
+          index: i,
+          error: true,
+          errorMessage: error.message || "Analysis failed",
+          original: null,
+          overlay: null,
+          heatmap: null,
+          bbox: null,
+          cancer_type: null,
+        };
+
+        results[i] = errorResult;
+        setAllResults([...results]); // Update UI with error
+
+        // Show results section after FIRST image completes (even if error)
+        if (i === 0) {
+          setAnalysisDone(true); // Now show the results section
+          setVisualTab("bbox");
+          setDetailsTab("clinical");
+        }
+
+        errors.push({
+          fileName: files[i].name,
+          message: error.message || "Analysis failed"
+        });
       }
-      setErrorMessage(errorMsg);
-      setStatusMessage("");
-    } finally {
-      setIsAnalyzing(false);
     }
+
+    // Final status message
+    const successfulResults = results.filter(r => !r.error && !r.analyzing);
+    if (errors.length === 0) {
+      setStatusMessage(`✅ All ${results.length} image(s) analyzed successfully.`);
+    } else if (successfulResults.length === 0) {
+      setStatusMessage("");
+      setErrorMessage(`❌ All images failed validation. Please upload valid mammogram images.`);
+    } else {
+      setStatusMessage(`✅ ${successfulResults.length} of ${results.length} image(s) analyzed successfully.`);
+      const errorSummary = errors.map(e => `• ${e.fileName}: ${e.message}`).join('\n');
+      console.warn('Some images failed:\n' + errorSummary);
+    }
+
+    setIsAnalyzing(false);
   };
 
   const analyzeFile = async (selectedFile) => {
@@ -490,7 +701,7 @@ function AppContent() {
       setResults(resultData);
 
       setAnalysisDone(true);
-      setVisualTab("overlay");
+      setVisualTab("bbox");
       setDetailsTab("clinical");
       setStatusMessage("Analysis complete.");
     } catch (error) {
@@ -1181,6 +1392,19 @@ function AppContent() {
 
               <div className="visual-tabs">
                 <button
+                  className={`visual-tab ${visualTab === "bbox" ? "active" : ""}`}
+                  onClick={() => setVisualTab("bbox")}
+                >
+                  Region Detection (BBox)
+                </button>
+                <button
+                  className={`visual-tab ${visualTab === "original" ? "active" : ""
+                    }`}
+                  onClick={() => setVisualTab("original")}
+                >
+                  Cancer Detection
+                </button>
+                <button
                   className={`visual-tab ${visualTab === "overlay" ? "active" : ""
                     }`}
                   onClick={() => setVisualTab("overlay")}
@@ -1194,83 +1418,78 @@ function AppContent() {
                 >
                   Heatmap Only
                 </button>
-                <button
-                  className={`visual-tab ${visualTab === "bbox" ? "active" : ""}`}
-                  onClick={() => setVisualTab("bbox")}
-                >
-                  Region Detection (BBox)
-                </button>
-                <button
-                  className={`visual-tab ${visualTab === "original" ? "active" : ""
-                    }`}
-                  onClick={() => setVisualTab("original")}
-                >
-                  Type of Cancer detection
-                </button>
+
               </div>
 
               <div className="visual-panel">
-                <div className="visual-image-card" style={{ position: 'relative' }}>
-                  {getActiveVisualImage() ? (
-                    <>
-                      <div
-                        className="zoom-container"
-                        onMouseMove={handleMouseMove}
-                        onClick={handleImageClick}
-                        style={{ position: 'relative' }}
-                      >
-                        {/* View Label Overlay */}
-                        {results.view_analysis && results.view_analysis.view_code && (
-                          <div style={{
-                            position: 'absolute',
-                            top: '12px',
-                            left: '12px',
-                            background: 'linear-gradient(135deg, rgba(0, 0, 0, 0.85) 0%, rgba(0, 0, 0, 0.75) 100%)',
-                            color: 'white',
-                            padding: '10px 18px',
-                            borderRadius: '8px',
-                            fontWeight: '700',
-                            fontSize: '1.1rem',
-                            zIndex: 10,
-                            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.4)',
-                            backdropFilter: 'blur(10px)',
-                            border: '2px solid rgba(255, 255, 255, 0.2)',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: '4px'
-                          }}>
+                <div style={{ display: 'flex', gap: '20px' }}>
+                  {/* Main Image Container */}
+                  <div className="visual-image-card" style={{ position: 'relative', flex: (visualTab === 'bbox' || visualTab === 'original') && results.findings?.regions?.length > 0 ? '1 1 65%' : '1 1 100%' }}>
+                    {getActiveVisualImage() ? (
+                      <>
+                        <div
+                          className="zoom-container"
+                          onMouseMove={handleMouseMove}
+                          onClick={handleImageClick}
+                          style={{ position: 'relative' }}
+                        >
+                          {/* View Label Overlay */}
+                          {results.view_analysis && results.view_analysis.view_code && (
                             <div style={{
-                              fontSize: '1.3rem',
-                              letterSpacing: '1px',
-                              color: '#00D9FF',
-                              textShadow: '0 0 10px rgba(0, 217, 255, 0.5)'
+                              position: 'absolute',
+                              top: '12px',
+                              left: '12px',
+                              background: 'linear-gradient(135deg, rgba(0, 0, 0, 0.85) 0%, rgba(0, 0, 0, 0.75) 100%)',
+                              color: 'white',
+                              padding: '10px 18px',
+                              borderRadius: '8px',
+                              fontWeight: '700',
+                              fontSize: '1.1rem',
+                              zIndex: 10,
+                              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.4)',
+                              backdropFilter: 'blur(10px)',
+                              border: '2px solid rgba(255, 255, 255, 0.2)',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '4px'
                             }}>
-                              {results.view_analysis.view_code} View
+                              <div style={{
+                                fontSize: '1.3rem',
+                                letterSpacing: '1px',
+                                color: '#00D9FF',
+                                textShadow: '0 0 10px rgba(0, 217, 255, 0.5)'
+                              }}>
+                                {results.view_analysis.view_code} View
+                              </div>
+                              <div style={{
+                                fontSize: '0.75rem',
+                                fontWeight: '500',
+                                color: 'rgba(255, 255, 255, 0.85)',
+                                letterSpacing: '0.5px'
+                              }}>
+                                {results.view_analysis.view_code.includes('MLO')
+                                  ? 'Mediolateral Oblique: Angled side view'
+                                  : 'Craniocaudal: Top-to-bottom view'}
+                              </div>
                             </div>
-                            <div style={{
-                              fontSize: '0.75rem',
-                              fontWeight: '500',
-                              color: 'rgba(255, 255, 255, 0.85)',
-                              letterSpacing: '0.5px'
-                            }}>
-                              {results.view_analysis.view_code.includes('MLO')
-                                ? 'Mediolateral Oblique: Angled side view'
-                                : 'Craniocaudal: Top-to-bottom view'}
-                            </div>
-                          </div>
-                        )}
+                          )}
 
-                        <img
-                          ref={zoomImageRef}
-                          src={getActiveVisualImage()}
-                          alt="Visual analysis"
-                          style={{ cursor: isZoomed ? 'zoom-out' : 'zoom-in' }}
-                        />
+                          <img
+                            ref={zoomImageRef}
+                            src={getActiveVisualImage()}
+                            alt="Visual analysis"
+                            style={{ cursor: isZoomed ? 'zoom-out' : 'zoom-in' }}
+                          />
 
-                      </div>
+                          {/* Green border overlay - covers the red border for selected region */}
+                          {renderGreenOverlay()}
 
-                      {/* Download Icon Button - Outside zoom container to prevent zoom on click */}
-                      <button
+                        </div>
+
+
+
+                        {/* Download Icon Button - Outside zoom container to prevent zoom on click */}
+                         <button
                         onClick={(e) => {
                           e.stopPropagation();
                           handleDownloadImage();
@@ -1279,6 +1498,7 @@ function AppContent() {
                           position: 'absolute',
                           bottom: '12px',
                           right: '12px',
+                          left: '1/2',
                           background: 'linear-gradient(135deg, rgba(174, 112, 175, 0.9) 0%, rgba(156, 39, 176, 0.9) 100%)',
                           border: '2px solid rgba(255, 255, 255, 0.3)',
                           color: 'white',
@@ -1293,7 +1513,8 @@ function AppContent() {
                           zIndex: 11,
                           boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
                           backdropFilter: 'blur(10px)',
-                          transition: 'all 0.3s ease'
+                          transition: 'all 0.3s ease',
+                          marginBottom: '10px'
                         }}
                         onMouseEnter={(e) => {
                           e.target.style.background = 'linear-gradient(135deg, rgba(186, 104, 200, 1) 0%, rgba(171, 71, 188, 1) 100%)';
@@ -1307,17 +1528,174 @@ function AppContent() {
                       >
                         <FiDownload size={18} />
                         Download
-                      </button>
-                    </>
-                  ) : (
-                    <p className="muted small">Image not available.</p>
+                      </button>                      
+
+                            
+
+                      </>
+                    ) : (
+                      <p className="muted small">Image not available.</p>
+                    )}
+                  </div>
+
+                  {/* Region List Sidebar - Only show for bbox and cancer_type tabs */}
+                  {(visualTab === 'bbox' || visualTab === 'original') && results.findings?.regions && results.findings.regions.length > 0 && (
+                    <div style={{
+                      flex: '0 0 35%',
+                      background: 'linear-gradient(135deg, #fafafa 0%, #f5f5f5 100%)',
+                      borderRadius: '12px',
+                      padding: '16px',
+                      maxHeight: '600px',
+                      overflowY: 'auto',
+                      boxShadow: '0 2px 12px rgba(0,0,0,0.08)'
+                    }}>
+                      <h4 style={{
+                        margin: '0 0 16px 0',
+                        fontSize: '1.1rem',
+                        color: '#9C2B6D',
+                        fontWeight: '700',
+                        borderBottom: '2px solid #E91E63',
+                        paddingBottom: '8px'
+                      }}>
+                        📍 Detected Regions ({results.findings.regions.length})
+                      </h4>
+
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                        {results.findings.regions.map((region, idx) => (
+                          <div
+                            key={idx}
+                            onClick={() => zoomToRegion(region)}
+                            style={{
+                              padding: '12px',
+                              background: selectedRegion === region.id
+                                ? 'linear-gradient(135deg, #fce7f3 0%, #fbcfe8 100%)'
+                                : 'white',
+                              borderRadius: '10px',
+                              cursor: 'pointer',
+                              border: selectedRegion === region.id
+                                ? '2px solid #E91E63'
+                                : '1px solid #e0e0e0',
+                              transition: 'all 0.2s ease',
+                              boxShadow: selectedRegion === region.id
+                                ? '0 4px 12px rgba(233, 30, 99, 0.2)'
+                                : '0 1px 3px rgba(0,0,0,0.1)'
+                            }}
+                            onMouseEnter={(e) => {
+                              if (selectedRegion !== region.id) {
+                                e.currentTarget.style.background = 'linear-gradient(135deg, #f9f9f9 0%, #f0f0f0 100%)';
+                                e.currentTarget.style.transform = 'translateY(-2px)';
+                                e.currentTarget.style.boxShadow = '0 4px 8px rgba(0,0,0,0.12)';
+                              }
+                            }}
+                            onMouseLeave={(e) => {
+                              if (selectedRegion !== region.id) {
+                                e.currentTarget.style.background = 'white';
+                                e.currentTarget.style.transform = 'translateY(0)';
+                                e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
+                              }
+                            }}
+                          >
+                            <div style={{
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center',
+                              marginBottom: '8px'
+                            }}>
+                              <span style={{
+                                fontWeight: '700',
+                                fontSize: '1rem',
+                                color: '#9C2B6D'
+                              }}>
+                                Region #{region.id}
+                              </span>
+                              <span style={{
+                                padding: '3px 8px',
+                                borderRadius: '12px',
+                                fontSize: '0.75rem',
+                                fontWeight: '600',
+                                background: region.severity === 'high'
+                                  ? 'rgba(220, 38, 38, 0.15)'
+                                  : region.severity === 'medium'
+                                    ? 'rgba(245, 158, 11, 0.15)'
+                                    : 'rgba(16, 185, 129, 0.15)',
+                                color: region.severity === 'high'
+                                  ? '#DC2626'
+                                  : region.severity === 'medium'
+                                    ? '#F59E0B'
+                                    : '#059669'
+                              }}>
+                                {toProperCase(region.severity) || 'low'}
+                              </span>
+                            </div>
+
+                            <div style={{ fontSize: '0.85rem', color: '#555', marginBottom: '6px' }}>
+                              <strong style={{ color: '#9C2B6D' }}>{toProperCase(region.cancer_type) || 'Abnormality'}</strong>
+                            </div>
+
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', fontSize: '0.75rem', color: '#666' }}>
+                              <div>
+                                <span style={{ color: '#999' }}>Location:</span>
+                                <br />
+                                <strong style={{ color: '#555' }}>{toProperCase(region.location?.quadrant) || 'N/A'}</strong>
+                              </div>
+                              <div>
+                                <span style={{ color: '#999' }}>Confidence:</span>
+                                <br />
+                                <strong style={{
+                                  color: region.confidence > 70 ? '#DC2626' : region.confidence > 50 ? '#F59E0B' : '#059669'
+                                }}>
+                                  {region.confidence?.toFixed(1)}%
+                                </strong>
+                              </div>
+                            </div>
+
+                            <div style={{
+                              marginTop: '8px',
+                              padding: '6px 8px',
+                              background: 'rgba(156, 43, 109, 0.05)',
+                              borderRadius: '6px',
+                              fontSize: '0.7rem',
+                              color: '#666',
+                              textAlign: 'center'
+                            }}>
+                              {selectedRegion === region.id ? '🔍 Click again to zoom out' : '🔍 Click to zoom to this region'}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   )}
                 </div>
+{/* Row 3: Image Quality - Full Width */}
+                        <div >
 
+                          {results.findings.comprehensive_analysis.image_quality && (
+                            <div style={{ padding: '10px', background: 'linear-gradient(135deg, #ECEFF1 0%, #CFD8DC 100%)', borderRadius: '12px', boxShadow: '0 2px 8px rgba(69, 90, 100, 0.15)', marginBottom: '4px', marginTop: '10px'}}>
+                              <div style={{ fontWeight: '700', color: '#455A64', marginBottom: '10px', fontSize: '0.95rem', gap: '6px', textAlign: 'center' }}>
+                                <span style={{ fontSize: '1.1rem' }}>📷</span> Image Quality Assessment
+                              </div>
+                              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', fontSize: '0.85rem' }}>
+                                <div style={{ padding: '4px 6px', background: 'rgba(255,255,255,0.7)', borderRadius: '8px', textAlign: 'center' }}>
+                                  <div style={{ color: '#666', fontSize: '0.75rem', marginBottom: '4px' }}>Overall Quality</div>
+                                  <strong style={{ color: '#455A64', fontSize: '1.1rem' }}>{results.findings.comprehensive_analysis.image_quality.overall_score}%</strong>
+                                </div>
+                                <div style={{ padding: '4px 6px', background: 'rgba(255,255,255,0.7)', borderRadius: '8px', textAlign: 'center' }}>
+                                  <div style={{ color: '#666', fontSize: '0.75rem', marginBottom: '4px' }}>Positioning</div>
+                                  <strong style={{ color: '#455A64', fontSize: '1rem' }}>{results.findings.comprehensive_analysis.image_quality.positioning}</strong>
+                                </div>
+                                <div style={{ padding: '4px 6px', background: 'rgba(255,255,255,0.7)', borderRadius: '8px', textAlign: 'center' }}>
+                                  <div style={{ color: '#666', fontSize: '0.75rem', marginBottom: '4px' }}>Technical Adequacy</div>
+                                  <strong style={{ color: '#455A64', fontSize: '1rem' }}>{results.findings.comprehensive_analysis.image_quality.technical_adequacy}</strong>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
 
                 {/* Detailed Analysis Information */}
                 <div className="results-info-card">
                   <h4>Understanding Your Results</h4>
+
 
                   {/* Comprehensive Image Analysis Section - Always shown */}
                   {results.findings?.comprehensive_analysis && (
@@ -1325,7 +1703,35 @@ function AppContent() {
                       <p className="regions-header" style={{ marginBottom: '16px', fontSize: '1.1rem' }}>
                         📊 Comprehensive Image Analysis
                       </p>
-
+                      {/* Row 4: Calcification Analysis - Alert Style if detected */}
+                      {results.findings.comprehensive_analysis.calcification_analysis?.detected && (
+                        <div style={{ padding: '14px', background: 'linear-gradient(135deg, #FFEBEE 0%, #FFCDD2 100%)', borderRadius: '12px', border: '2px solid #EF5350', boxShadow: '0 2px 12px rgba(239, 83, 80, 0.25)', marginBottom: '14px' }}>
+                          <div style={{ fontWeight: '700', color: '#C62828', marginBottom: '12px', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span style={{ fontSize: '1.2rem' }}>⚠️</span> Calcification Analysis - Attention Required
+                          </div>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', fontSize: '0.85rem' }}>
+                            <div style={{ padding: '10px 12px', background: 'rgba(255,255,255,0.8)', borderRadius: '8px', textAlign: 'center' }}>
+                              <div style={{ color: '#666', fontSize: '0.75rem', marginBottom: '4px' }}>Count</div>
+                              <strong style={{ color: '#C62828', fontSize: '1.1rem' }}>{results.findings.comprehensive_analysis.calcification_analysis.count}</strong>
+                            </div>
+                            <div style={{ padding: '10px 12px', background: 'rgba(255,255,255,0.8)', borderRadius: '8px', textAlign: 'center' }}>
+                              <div style={{ color: '#666', fontSize: '0.75rem', marginBottom: '4px' }}>Distribution</div>
+                              <strong style={{ color: '#C62828', fontSize: '0.95rem' }}>{results.findings.comprehensive_analysis.calcification_analysis.distribution}</strong>
+                            </div>
+                            <div style={{ padding: '10px 12px', background: 'rgba(255,255,255,0.8)', borderRadius: '8px', textAlign: 'center' }}>
+                              <div style={{ color: '#666', fontSize: '0.75rem', marginBottom: '4px' }}>Morphology</div>
+                              <strong style={{ color: '#C62828', fontSize: '0.95rem' }}>{results.findings.comprehensive_analysis.calcification_analysis.morphology}</strong>
+                            </div>
+                            <div style={{ padding: '10px 12px', background: 'rgba(255,255,255,0.8)', borderRadius: '8px', textAlign: 'center' }}>
+                              <div style={{ color: '#666', fontSize: '0.75rem', marginBottom: '4px' }}>BI-RADS</div>
+                              <strong style={{ color: '#C62828', fontSize: '1.1rem' }}>{results.findings.comprehensive_analysis.calcification_analysis.birads_category}</strong>
+                            </div>
+                          </div>
+                          <div style={{ marginTop: '12px', fontSize: '0.85rem', color: '#C62828', fontWeight: '600', padding: '10px 12px', background: 'rgba(255,255,255,0.6)', borderRadius: '8px', borderLeft: '4px solid #C62828' }}>
+                            📋 {results.findings.comprehensive_analysis.calcification_analysis.recommendation}
+                          </div>
+                        </div>
+                      )}
                       {/* Row 1: Primary Analysis - Breast Density & Tissue Texture */}
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '14px', marginBottom: '14px' }}>
                         {/* Breast Density */}
@@ -1404,58 +1810,6 @@ function AppContent() {
                         )}
                       </div>
 
-                      {/* Row 3: Image Quality - Full Width */}
-                      {results.findings.comprehensive_analysis.image_quality && (
-                        <div style={{ padding: '14px', background: 'linear-gradient(135deg, #ECEFF1 0%, #CFD8DC 100%)', borderRadius: '12px', boxShadow: '0 2px 8px rgba(69, 90, 100, 0.15)', marginBottom: '14px' }}>
-                          <div style={{ fontWeight: '700', color: '#455A64', marginBottom: '10px', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <span style={{ fontSize: '1.1rem' }}>📷</span> Image Quality Assessment
-                          </div>
-                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', fontSize: '0.85rem' }}>
-                            <div style={{ padding: '10px 12px', background: 'rgba(255,255,255,0.7)', borderRadius: '8px', textAlign: 'center' }}>
-                              <div style={{ color: '#666', fontSize: '0.75rem', marginBottom: '4px' }}>Overall Quality</div>
-                              <strong style={{ color: '#455A64', fontSize: '1.1rem' }}>{results.findings.comprehensive_analysis.image_quality.overall_score}%</strong>
-                            </div>
-                            <div style={{ padding: '10px 12px', background: 'rgba(255,255,255,0.7)', borderRadius: '8px', textAlign: 'center' }}>
-                              <div style={{ color: '#666', fontSize: '0.75rem', marginBottom: '4px' }}>Positioning</div>
-                              <strong style={{ color: '#455A64', fontSize: '1rem' }}>{results.findings.comprehensive_analysis.image_quality.positioning}</strong>
-                            </div>
-                            <div style={{ padding: '10px 12px', background: 'rgba(255,255,255,0.7)', borderRadius: '8px', textAlign: 'center' }}>
-                              <div style={{ color: '#666', fontSize: '0.75rem', marginBottom: '4px' }}>Technical Adequacy</div>
-                              <strong style={{ color: '#455A64', fontSize: '1rem' }}>{results.findings.comprehensive_analysis.image_quality.technical_adequacy}</strong>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Row 4: Calcification Analysis - Alert Style if detected */}
-                      {results.findings.comprehensive_analysis.calcification_analysis?.detected && (
-                        <div style={{ padding: '14px', background: 'linear-gradient(135deg, #FFEBEE 0%, #FFCDD2 100%)', borderRadius: '12px', border: '2px solid #EF5350', boxShadow: '0 2px 12px rgba(239, 83, 80, 0.25)' }}>
-                          <div style={{ fontWeight: '700', color: '#C62828', marginBottom: '12px', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <span style={{ fontSize: '1.2rem' }}>⚠️</span> Calcification Analysis - Attention Required
-                          </div>
-                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', fontSize: '0.85rem' }}>
-                            <div style={{ padding: '10px 12px', background: 'rgba(255,255,255,0.8)', borderRadius: '8px', textAlign: 'center' }}>
-                              <div style={{ color: '#666', fontSize: '0.75rem', marginBottom: '4px' }}>Count</div>
-                              <strong style={{ color: '#C62828', fontSize: '1.1rem' }}>{results.findings.comprehensive_analysis.calcification_analysis.count}</strong>
-                            </div>
-                            <div style={{ padding: '10px 12px', background: 'rgba(255,255,255,0.8)', borderRadius: '8px', textAlign: 'center' }}>
-                              <div style={{ color: '#666', fontSize: '0.75rem', marginBottom: '4px' }}>Distribution</div>
-                              <strong style={{ color: '#C62828', fontSize: '0.95rem' }}>{results.findings.comprehensive_analysis.calcification_analysis.distribution}</strong>
-                            </div>
-                            <div style={{ padding: '10px 12px', background: 'rgba(255,255,255,0.8)', borderRadius: '8px', textAlign: 'center' }}>
-                              <div style={{ color: '#666', fontSize: '0.75rem', marginBottom: '4px' }}>Morphology</div>
-                              <strong style={{ color: '#C62828', fontSize: '0.95rem' }}>{results.findings.comprehensive_analysis.calcification_analysis.morphology}</strong>
-                            </div>
-                            <div style={{ padding: '10px 12px', background: 'rgba(255,255,255,0.8)', borderRadius: '8px', textAlign: 'center' }}>
-                              <div style={{ color: '#666', fontSize: '0.75rem', marginBottom: '4px' }}>BI-RADS</div>
-                              <strong style={{ color: '#C62828', fontSize: '1.1rem' }}>{results.findings.comprehensive_analysis.calcification_analysis.birads_category}</strong>
-                            </div>
-                          </div>
-                          <div style={{ marginTop: '12px', fontSize: '0.85rem', color: '#C62828', fontWeight: '600', padding: '10px 12px', background: 'rgba(255,255,255,0.6)', borderRadius: '8px', borderLeft: '4px solid #C62828' }}>
-                            📋 {results.findings.comprehensive_analysis.calcification_analysis.recommendation}
-                          </div>
-                        </div>
-                      )}
                     </div>
                   )}
 
@@ -1471,7 +1825,7 @@ function AppContent() {
                             {results.findings.regions.map((region, idx) => (
                               <div key={idx} className="region-card" style={{ marginBottom: '16px' }}>
                                 <div className="region-card-header">
-                                  Region {region.id}: {region.cancer_type || 'Abnormality'}
+                                  Region {region.id}: {toProperCase(region.cancer_type) || 'Abnormality'}
                                   {region.birads_region && (
                                     <span style={{ marginLeft: '10px', padding: '2px 8px', background: '#E91E63', color: 'white', borderRadius: '4px', fontSize: '0.75rem' }}>
                                       BI-RADS {region.birads_region}
@@ -1481,16 +1835,23 @@ function AppContent() {
                                 <div className="region-card-grid">
                                   <div style={{ gridColumn: '1 / -1', paddingBottom: '8px', borderBottom: '1px solid rgba(156, 43, 109, 0.15)' }}>
                                     <span style={{ fontSize: '0.75rem', color: '#8B5A8D' }}>Type:</span>
-                                    <strong style={{ fontSize: '0.95rem', color: '#9C2B6D' }}> {region.cancer_type || 'Unknown'}</strong>
+                                    <strong style={{ fontSize: '0.95rem', color: '#9C2B6D' }}> {toProperCase(region.cancer_type) || 'Unknown'}</strong>
                                   </div>
-                                  <div><span>Location:</span> <strong>{region.location?.quadrant || 'Unknown'}</strong></div>
+                                  <div>
+                                    <span>Location:</span>{' '}
+                                    <strong>
+                                      {toProperCase(region.location?.quadrant) || 'Unknown'}
+                                    </strong>
+                                  </div>
+
+
                                   <div><span>Confidence:</span> <strong style={{ color: region.confidence > 70 ? '#DC2626' : '#059669' }}>{region.confidence?.toFixed(1)}%</strong></div>
 
                                   {/* Morphology Details */}
                                   <div><span>Morphology:</span> <strong>{region.morphology?.shape || '—'}</strong></div>
                                   <div><span>Margin:</span> <strong>{region.margin?.type || '—'}</strong></div>
                                   <div><span>Margin Risk:</span> <strong style={{ color: region.margin?.risk_level === 'High' ? '#DC2626' : region.margin?.risk_level === 'Moderate' ? '#F59E0B' : '#059669' }}>{region.margin?.risk_level || '—'}</strong></div>
-                                  <div><span>Density:</span> <strong>{region.density?.level || '—'}</strong></div>
+                                  <div><span>Density:</span> <strong>{toProperCase(region.density?.level) || '—'}</strong></div>
                                   <div><span>Vascularity:</span> <strong>{region.vascularity?.assessment || '—'}</strong></div>
                                   <div><span>Tissue:</span> <strong>{region.tissue_composition?.type || '—'}</strong></div>
 
@@ -1505,7 +1866,7 @@ function AppContent() {
                                   <div>
                                     <span>Severity:</span>{' '}
                                     <span className={`severity-badge ${region.severity || 'low'}`}>
-                                      {region.severity || 'low'}
+                                      {toProperCase(region.severity || 'low')}
                                     </span>
                                   </div>
                                   <div><span>Area:</span> <strong>{region.size?.area_percentage?.toFixed(2)}%</strong></div>
@@ -1531,17 +1892,6 @@ function AppContent() {
                           </div>
                         </>
                       )}
-
-                      <div className="urgent-box malignant">
-                        <h5>⚕️ Recommended Action</h5>
-                        <p>Based on these findings, consultation with an oncologist or breast specialist is strongly recommended.</p>
-                        <ul className="checklist">
-                          <li>Clinical Breast Examination</li>
-                          <li>Diagnostic Mammography</li>
-                          <li>Breast Ultrasound</li>
-                          <li>Core Needle Biopsy (if needed)</li>
-                        </ul>
-                      </div>
                     </div>
                   ) : (
                     <div>
@@ -1665,14 +2015,14 @@ function AppContent() {
                     )}
 
                     {/* MLO-specific: Pectoral Muscle */}
-                    {results.view_analysis.view_code?.includes('MLO') && results.view_analysis.pectoral_muscle_visibility && (
+                    {/* {results.view_analysis.view_code?.includes('MLO') && results.view_analysis.pectoral_muscle_visibility && (
                       <div style={{ padding: '12px', background: 'rgba(255,255,255,0.6)', borderRadius: '8px' }}>
                         <div style={{ fontSize: '0.75rem', color: '#666', marginBottom: '4px' }}>Pectoral Muscle</div>
                         <div style={{ fontWeight: '600', color: '#333', fontSize: '0.85rem' }}>
                           {results.view_analysis.pectoral_muscle_visibility}
                         </div>
                       </div>
-                    )}
+                    )} */}
 
                     {/* CC-specific: Asymmetry */}
                     {results.view_analysis.view_code?.includes('CC') && results.view_analysis.asymmetry && (
@@ -1706,10 +2056,10 @@ function AppContent() {
                         : 'rgba(46, 125, 50, 0.1)',
                     borderRadius: '8px',
                     borderLeft: `4px solid ${results.view_analysis.suspicion_level === 'High'
-                        ? '#C62828'
-                        : results.view_analysis.suspicion_level === 'Intermediate'
-                          ? '#F57C00'
-                          : '#2E7D32'
+                      ? '#C62828'
+                      : results.view_analysis.suspicion_level === 'Intermediate'
+                        ? '#F57C00'
+                        : '#2E7D32'
                       }`
                   }}>
                     <div style={{ fontSize: '0.75rem', color: '#666', marginBottom: '4px' }}>Impression</div>
@@ -1728,6 +2078,16 @@ function AppContent() {
                       Confidence: <strong>{results.view_analysis.confidence_score || 'N/A'}</strong>
                     </div>
                   </div>
+                  <div className="urgent-box malignant">
+                        <h5>⚕️ Recommended Action</h5>
+                        <p>Based on these findings, consultation with an oncologist or breast specialist is strongly recommended.</p>
+                        <ul className="checklist">
+                          <li>Clinical Breast Examination</li>
+                          <li>Diagnostic Mammography</li>
+                          <li>Breast Ultrasound</li>
+                          <li>Core Needle Biopsy (if needed)</li>
+                        </ul>
+                      </div>
                 </div>
               </section>
             )}

@@ -71,6 +71,9 @@ class YOLOCancerDetector:
         else:
             img_array = image
         
+        # Create tissue mask to filter out background detections
+        tissue_mask = self._create_tissue_mask(img_array, threshold=15)
+        
         # Run YOLO inference
         results = self.model.predict(
             img_array,
@@ -83,9 +86,33 @@ class YOLOCancerDetector:
         
         # Process detections
         if results.boxes is not None and len(results.boxes) > 0:
+            img_h, img_w = img_array.shape[:2]
+            
             for i, box in enumerate(results.boxes):
                 # Get box coordinates (xyxy format)
                 x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
+                
+                # Convert to integers and ensure within bounds
+                x1, y1 = max(0, int(x1)), max(0, int(y1))
+                x2, y2 = min(img_w-1, int(x2)), min(img_h-1, int(y2))
+                
+                # Skip invalid boxes
+                if x2 <= x1 or y2 <= y1:
+                    continue
+                
+                # FILTER 1: Check if box center is on tissue (not black background)
+                cx, cy = (x1 + x2) // 2, (y1 + y2) // 2
+                if not tissue_mask[cy, cx]:
+                    print(f"DEBUG: Filtered detection #{i+1} - center not on tissue")
+                    continue
+                
+                # FILTER 2: Check tissue percentage in box (must be >50%)
+                box_tissue = tissue_mask[y1:y2, x1:x2]
+                if box_tissue.size > 0:
+                    tissue_percentage = np.mean(box_tissue)
+                    if tissue_percentage < 0.5:
+                        print(f"DEBUG: Filtered detection #{i+1} - only {tissue_percentage*100:.1f}% tissue overlap")
+                        continue
                 
                 # Get class and confidence
                 class_id = int(box.cls[0].cpu().numpy())
@@ -193,6 +220,27 @@ class YOLOCancerDetector:
         detections = sorted(detections, key=lambda x: x['confidence'], reverse=True)
         
         return detections
+    
+    
+    def _create_tissue_mask(self, img_array, threshold=15):
+        """
+        Create a mask identifying tissue (non-background) areas.
+        
+        Args:
+            img_array: Image as numpy array
+            threshold: Pixel intensity threshold to distinguish tissue from background
+        
+        Returns:
+            Binary mask where True = tissue area
+        """
+        if len(img_array.shape) == 3:
+            gray = np.mean(img_array, axis=2)
+        else:
+            gray = img_array
+        
+        # Tissue is where pixel intensity is above threshold (not black background)
+        mask = gray > threshold
+        return mask
     
     
     def _get_location(self, center_x, center_y, img_width, img_height):

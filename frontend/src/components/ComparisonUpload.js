@@ -72,7 +72,27 @@ function ComparisonUpload() {
     
     setUploadHistory(prev => {
       const updated = [newEntry, ...prev.filter(h => h.name !== fileName)].slice(0, 5);
-      localStorage.setItem('uploadHistory', JSON.stringify(updated));
+      
+      try {
+        localStorage.setItem('uploadHistory', JSON.stringify(updated));
+      } catch (error) {
+        // If storage quota exceeded, clear old data and try again
+        if (error.name === 'QuotaExceededError') {
+          console.warn('Storage quota exceeded, clearing old history...');
+          try {
+            // Keep only the newest entry
+            const minimal = [newEntry];
+            localStorage.setItem('uploadHistory', JSON.stringify(minimal));
+            return minimal;
+          } catch (e) {
+            // If still fails, clear everything and continue without storage
+            console.error('Failed to save to localStorage:', e);
+            localStorage.removeItem('uploadHistory');
+            return [newEntry];
+          }
+        }
+      }
+      
       return updated;
     });
   };
@@ -80,7 +100,13 @@ function ComparisonUpload() {
   const removeFromHistory = (id) => {
     setUploadHistory(prev => {
       const updated = prev.filter(h => h.id !== id);
-      localStorage.setItem('uploadHistory', JSON.stringify(updated));
+      
+      try {
+        localStorage.setItem('uploadHistory', JSON.stringify(updated));
+      } catch (error) {
+        console.error('Failed to update localStorage:', error);
+      }
+      
       return updated;
     });
   };
