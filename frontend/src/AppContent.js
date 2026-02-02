@@ -57,8 +57,10 @@ function AppContent() {
   const [secondResults, setSecondResults] = useState(null);
   const [files, setFiles] = useState([]); // Array for multiple files
   const [allResults, setAllResults] = useState([]); // Array for all results
+  // eslint-disable-next-line no-unused-vars
   const [dragActive, setDragActive] = useState(false);
   const [analysisDone, setAnalysisDone] = useState(false);
+  // eslint-disable-next-line no-unused-vars
   const [showComparison, setShowComparison] = useState(false);
   const [visualTab, setVisualTab] = useState("overlay");
   const [detailsTab, setDetailsTab] = useState("clinical");
@@ -153,8 +155,8 @@ function AppContent() {
     });
   };
 
-  // Re-upload from history
-  const uploadFromHistory = (historyItem) => {
+  // UNUSED: Re-upload from history
+  /* const uploadFromHistory = (historyItem) => {
     // Convert base64 back to file and analyze
     fetch(historyItem.data)
       .then(res => res.blob())
@@ -168,7 +170,7 @@ function AppContent() {
         console.error('Error loading from history:', err);
         setErrorMessage('Failed to load image from history');
       });
-  };
+  }; */
 
   // Reset zoom when visual tab changes
   useEffect(() => {
@@ -345,6 +347,7 @@ function AppContent() {
     }
   };
 
+  // eslint-disable-next-line no-unused-vars
   const handleSecondFileChange = (e) => {
     if (e.target.files && e.target.files.length > 0) {
       const selectedFiles = Array.from(e.target.files);
@@ -409,16 +412,19 @@ function AppContent() {
     return null;
   };
 
+  // eslint-disable-next-line no-unused-vars
   const handleDragOver = (e) => {
     e.preventDefault();
     setDragActive(true);
   };
 
+  // eslint-disable-next-line no-unused-vars
   const handleDragLeave = (e) => {
     e.preventDefault();
     setDragActive(false);
   };
 
+  // eslint-disable-next-line no-unused-vars
   const handleDrop = (e) => {
     e.preventDefault();
     setDragActive(false);
@@ -445,6 +451,7 @@ function AppContent() {
     }
   };
 
+  // eslint-disable-next-line no-unused-vars
   const handleBrowseClick = () => {
     const input = document.getElementById("fileInput");
     if (input) input.click();
@@ -724,6 +731,7 @@ function AppContent() {
     }
   };
 
+  // eslint-disable-next-line no-unused-vars
   const analyzeSecondFile = async (selectedFile) => {
     if (!selectedFile) return;
     const formData = new FormData();
@@ -873,6 +881,7 @@ function AppContent() {
     }
   };
 
+  // eslint-disable-next-line no-unused-vars
   const handleDownloadComparisonReport = async () => {
     console.log("🔵 Download Comparison Report button clicked!");
 
