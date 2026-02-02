@@ -276,7 +276,7 @@ def detect_bounding_boxes(heatmap, original_image_size, threshold=0.6, min_area=
 def draw_bounding_boxes_with_cancer_type(image, regions, line_width=4):
     """
     Draw bounding boxes with cancer type labels ATTACHED to each box.
-    Each box and its label use the SAME coordinates - no drift possible.
+    Font size scales dynamically based on image resolution.
     
     Args:
         image: PIL Image
@@ -289,10 +289,29 @@ def draw_bounding_boxes_with_cancer_type(image, regions, line_width=4):
     img_copy = image.copy()
     draw = ImageDraw.Draw(img_copy)
     
+    # Use DYNAMIC font size that scales with image resolution
+    img_width, img_height = image.size
+    
+    # Scale font size based on image dimensions
+    # Use 3% for high-res images, with min/max caps for low/high res
+    base_dimension = min(img_width, img_height)
+    font_size = min(200, max(24, int(base_dimension * 0.02)))  # 3% scaling, min 40pt, max 200pt
+    
+    # Scale line width proportionally
+    dynamic_line_width = min(25, max(4, int(base_dimension * 0.003)))  # 0.5% scaling, min 10px, max 25px
+    
     try:
-        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 18)
+        # Try Windows font first
+        font = ImageFont.truetype("C:/Windows/Fonts/arialbd.ttf", font_size)
     except:
-        font = ImageFont.load_default()
+        try:
+            # Try Linux font
+            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", font_size)
+        except:
+            # Fallback - but this will be tiny
+            font = ImageFont.load_default()
+    
+    print(f"Cancer type - Dynamic sizing - Image: {img_width}x{img_height}, Font: {font_size}pt, Line: {dynamic_line_width}px")
     
     # Color mapping based on severity
     severity_colors = {
@@ -313,41 +332,33 @@ def draw_bounding_boxes_with_cancer_type(image, regions, line_width=4):
         # Always use red for Type of Cancer Detection as requested
         box_color = '#FF0000'
         
-        # Draw bounding box with THICKER lines for better visibility
-        draw.rectangle([x1, y1, x2, y2], outline=box_color, width=5)
+        # Draw bounding box with dynamic line width
+        draw.rectangle([x1, y1, x2, y2], outline=box_color, width=dynamic_line_width)
         
         # Create label: "Cancer Type - XX%"
         label = f"{cancer_type} - {confidence:.0f}%"
         
-        # Label positioning constants
-        padding = 8
-        offset = 6
+        # Scale padding with font size
+        padding = max(10, int(font_size * 0.3))
         
         # Get text dimensions
         text_bbox = draw.textbbox((0, 0), label, font=font)
         text_width = text_bbox[2] - text_bbox[0]
         text_height = text_bbox[3] - text_bbox[1]
         
-        # Calculate space needed for label
-        space_needed = text_height + padding * 2 + offset
+        # Place label OUTSIDE the box (above it)
+        label_x = x1 + 5
+        text_y = y1 - text_height - padding * 2 - 5
         
-        # Determine position: above box if space available, otherwise inside
-        if y1 >= space_needed:
-            # Place ABOVE the box (preferred)
-            label_x = x1 + 5
-            bg_y1 = y1 - space_needed
-            bg_y2 = y1 - offset
-            text_y = bg_y1 + padding
-        else:
-            # Place INSIDE the box at top-left
-            label_x = x1 + padding
-            bg_y1 = y1 + 5
-            bg_y2 = y1 + 5 + text_height + padding * 2
-            text_y = bg_y1 + padding
+        # If not enough space above, place inside at top
+        if text_y < 0:
+            text_y = y1 + 5
         
-        # Draw label background (same color as box)
+        # Draw label background (same color as box) with padding
         bg_x1 = label_x - padding
+        bg_y1 = text_y - padding
         bg_x2 = label_x + text_width + padding
+        bg_y2 = text_y + text_height + padding
         draw.rectangle([bg_x1, bg_y1, bg_x2, bg_y2], fill=box_color, outline=box_color)
         
         # Draw label text (white)
@@ -358,7 +369,7 @@ def draw_bounding_boxes_with_cancer_type(image, regions, line_width=4):
 
 def draw_bounding_boxes(image, boxes, box_color='red', text_color='white', line_width=3):
     """
-    Draw bounding boxes on an image.
+    Draw bounding boxes on an image with dynamic font sizing based on image resolution.
     
     Args:
         image: PIL Image
@@ -373,30 +384,62 @@ def draw_bounding_boxes(image, boxes, box_color='red', text_color='white', line_
     img_copy = image.copy()
     draw = ImageDraw.Draw(img_copy)
     
+    # Use DYNAMIC font size that scales with image resolution
+    img_width, img_height = image.size
+    
+    # Scale font size based on image dimensions
+    # Use 3% for high-res images, with min/max caps for low/high res
+    base_dimension = min(img_width, img_height)
+    font_size = min(200, max(24, int(base_dimension * 0.02)))  # 3% scaling, min 40pt, max 200pt
+    
+    # Scale line width proportionally
+    dynamic_line_width = min(25, max(4, int(base_dimension * 0.003)))  # 0.5% scaling, min 10px, max 25px
+    
     try:
-        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 16)
+        # Try Windows font first
+        font = ImageFont.truetype("C:/Windows/Fonts/arialbd.ttf", font_size)
     except:
-        font = ImageFont.load_default()
+        try:
+            # Try Linux font
+            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", font_size)
+        except:
+            # Fallback - but this will be tiny
+            font = ImageFont.load_default()
+    
+    print(f"BBox - Dynamic sizing - Image: {img_width}x{img_height}, Font: {font_size}pt, Line: {dynamic_line_width}px")
     
     for i, (x1, y1, x2, y2, confidence) in enumerate(boxes):
-        # Draw rectangle
-        draw.rectangle([x1, y1, x2, y2], outline=box_color, width=line_width)
+        # Draw rectangle with dynamic line width
+        draw.rectangle([x1, y1, x2, y2], outline=box_color, width=dynamic_line_width)
         
         # Draw label - position above or inside box depending on space
         label = f"Region {i+1}: {confidence*100:.1f}%"
         
-        # Check if there's enough space above the box (need ~25 pixels)
-        if y1 >= 25:
-            label_y = y1 - 20
-        else:
-            # Not enough space above, put it inside the box at the top
+        # Calculate space needed
+        text_bbox = draw.textbbox((0, 0), label, font=font)
+        text_width = text_bbox[2] - text_bbox[0]
+        text_height = text_bbox[3] - text_bbox[1]
+        
+        # Scale padding with font size
+        padding = max(8, int(font_size * 0.25))
+        
+        # Place label OUTSIDE the box (above it)
+        label_x = x1 + 5
+        label_y = y1 - text_height - padding * 2 - 5
+        
+        # If not enough space above, place inside at top
+        if label_y < 0:
             label_y = y1 + 5
         
-        bbox = draw.textbbox((x1, label_y), label, font=font)
-        draw.rectangle([bbox[0]-2, bbox[1]-2, bbox[2]+2, bbox[3]+2], fill=box_color)
+        # Draw label background with padding
+        bg_x1 = label_x - padding
+        bg_y1 = label_y - padding
+        bg_x2 = label_x + text_width + padding
+        bg_y2 = label_y + text_height + padding
+        draw.rectangle([bg_x1, bg_y1, bg_x2, bg_y2], fill=box_color)
         
-        # Draw label text
-        draw.text((x1, label_y), label, fill=text_color, font=font)
+        # Draw label text (white)
+        draw.text((label_x, label_y), label, fill=text_color, font=font)
     
     return img_copy
 
@@ -2091,14 +2134,42 @@ def detect_text_label_pattern_based(img_array):
                 
                 print(f"DEBUG Pattern {region_name}: text_ratio={text_ratio:.4f}, width_ratio={width_ratio:.3f}, text_w={text_width}, text_h={text_height}, text_aspect={text_aspect:.2f}")
                 
-                # MLO text is longer than CC text
-                # "R-MLO" = 5 chars, "RMLO" = 4 chars vs "RCC" = 3 chars, "CC" = 2 chars
-                # MLO text is typically wider (more horizontal pixels)
+                # Improved CC vs MLO detection based on text characteristics
+                # CC text: "RCC", "LCC", "R-CC", "L-CC" (3-5 chars, compact)
+                # MLO text: "RMLO", "LMLO", "R-MLO", "L-MLO" (4-6 chars, wider)
                 
-                # Strong MLO indicators - be more aggressive
-                if text_width > 20 or width_ratio > 0.10:
-                    print(f"DEBUG: Pattern suggests MLO (wide text pattern: w={text_width}, ratio={width_ratio:.3f})")
+                # Use multiple factors for better accuracy:
+                # 1. Text width: MLO is typically wider (>25px), CC is narrower (<20px)
+                # 2. Text aspect ratio: MLO is more horizontal (>2.5), CC is more square (1.5-2.5)
+                # 3. Width ratio: MLO takes more space (>12%), CC is more compact (<10%)
+                
+                is_likely_mlo = False
+                is_likely_cc = False
+                
+                # Strong MLO indicators
+                if (text_width > 30 and text_aspect > 2.8) or (width_ratio > 0.15):
+                    is_likely_mlo = True
+                    print(f"DEBUG: Strong MLO pattern (w={text_width}, aspect={text_aspect:.2f}, ratio={width_ratio:.3f})")
+                
+                # Strong CC indicators  
+                elif (text_width < 22 and text_aspect < 2.3) or (width_ratio < 0.09 and text_width < 25):
+                    is_likely_cc = True
+                    print(f"DEBUG: Strong CC pattern (w={text_width}, aspect={text_aspect:.2f}, ratio={width_ratio:.3f})")
+                
+                # Moderate MLO indicators
+                elif text_width > 25 or width_ratio > 0.12:
+                    is_likely_mlo = True
+                    print(f"DEBUG: Moderate MLO pattern (w={text_width}, ratio={width_ratio:.3f})")
+                
+                # Default to CC if ambiguous (CC is more common and safer default)
+                else:
+                    is_likely_cc = True
+                    print(f"DEBUG: Ambiguous, defaulting to CC")
+                
+                if is_likely_mlo:
                     return None, "MLO"
+                elif is_likely_cc:
+                    return None, "CC"
     
     # No text detected
     return None, None
@@ -2515,3 +2586,4 @@ def generate_mammogram_view_analysis(image, heatmap, model_confidence, detected_
     analysis["laterality_code"] = laterality
     
     return analysis
+

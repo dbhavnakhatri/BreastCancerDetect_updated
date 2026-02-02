@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clear Browser Storage</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #e91e63;
+            margin-bottom: 20px;
+        }
+        button {
+            background: #e91e63;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 16px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 10px 5px;
+        }
+        button:hover {
+            background: #c2185b;
+        }
+        .success {
+            background: #4caf50;
+            color: white;
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 20px;
+            display: none;
+        }
+        .info {
+            background: #2196f3;
+            color: white;
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 20px;
+        }
+        .storage-info {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f0f0f0;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧹 Clear Browser Storage</h1>
+        
+        <div class="info">
+            <strong>Why clear storage?</strong><br>
+            If you're seeing "QuotaExceededError", your browser's storage is full.
+            This tool will clear the upload history to free up space.
+        </div>
+
+        <div class="storage-info" id="storageInfo">
+            <strong>Current Storage:</strong><br>
+            <span id="storageDetails">Checking...</span>
+        </div>
+
+        <button onclick="clearUploadHistory()">Clear Upload History</button>
+        <button onclick="clearAllStorage()">Clear All Storage</button>
+        <button onclick="checkStorage()">Refresh Storage Info</button>
+
+        <div class="success" id="successMessage"></div>
+    </div>
+
+    <script>
+        function showSuccess(message) {
+            const el = document.getElementById('successMessage');
+            el.textContent = message;
+            el.style.display = 'block';
+            setTimeout(() => {
+                el.style.display = 'none';
+            }, 3000);
+        }
+
+        function clearUploadHistory() {
+            try {
+                localStorage.removeItem('uploadHistory');
+                showSuccess('✅ Upload history cleared successfully!');
+                checkStorage();
+            } catch (e) {
+                alert('Error clearing history: ' + e.message);
+            }
+        }
+
+        function clearAllStorage() {
+            if (confirm('This will clear ALL stored data. Continue?')) {
+                try {
+                    localStorage.clear();
+                    sessionStorage.clear();
+                    showSuccess('✅ All storage cleared successfully!');
+                    checkStorage();
+                } catch (e) {
+                    alert('Error clearing storage: ' + e.message);
+                }
+            }
+        }
+
+        function checkStorage() {
+            try {
+                const uploadHistory = localStorage.getItem('uploadHistory');
+                let size = 0;
+                let count = 0;
+
+                if (uploadHistory) {
+                    size = new Blob([uploadHistory]).size;
+                    count = JSON.parse(uploadHistory).length;
+                }
+
+                const sizeKB = (size / 1024).toFixed(2);
+                const sizeMB = (size / 1024 / 1024).toFixed(2);
+
+                let details = `
+                    Upload History Entries: ${count}<br>
+                    Upload History Size: ${sizeKB} KB (${sizeMB} MB)<br>
+                    Total localStorage Items: ${localStorage.length}
+                `;
+
+                // Try to estimate total size
+                let totalSize = 0;
+                for (let key in localStorage) {
+                    if (localStorage.hasOwnProperty(key)) {
+                        totalSize += localStorage[key].length + key.length;
+                    }
+                }
+                const totalKB = (totalSize / 1024).toFixed(2);
+                const totalMB = (totalSize / 1024 / 1024).toFixed(2);
+
+                details += `<br>Total Storage Used: ${totalKB} KB (${totalMB} MB)`;
+
+                document.getElementById('storageDetails').innerHTML = details;
+            } catch (e) {
+                document.getElementById('storageDetails').innerHTML = 'Error checking storage: ' + e.message;
+            }
+        }
+
+        // Check storage on load
+        checkStorage();
+    </script>
+</body>
+</html>
