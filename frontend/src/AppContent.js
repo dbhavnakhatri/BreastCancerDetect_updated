@@ -2078,16 +2078,6 @@ function AppContent() {
                       Confidence: <strong>{results.view_analysis.confidence_score || 'N/A'}</strong>
                     </div>
                   </div>
-                  <div className="urgent-box malignant">
-                        <h5>⚕️ Recommended Action</h5>
-                        <p>Based on these findings, consultation with an oncologist or breast specialist is strongly recommended.</p>
-                        <ul className="checklist">
-                          <li>Clinical Breast Examination</li>
-                          <li>Diagnostic Mammography</li>
-                          <li>Breast Ultrasound</li>
-                          <li>Core Needle Biopsy (if needed)</li>
-                        </ul>
-                      </div>
                 </div>
               </section>
             )}
@@ -2373,6 +2363,16 @@ function AppContent() {
                 )}
               </div>
             </section>
+            <div className="urgent-box malignant">
+                        <h5>⚕️ Recommended Action</h5>
+                        <p>Based on these findings, consultation with an oncologist or breast specialist is strongly recommended.</p>
+                        <ul className="checklist">
+                          <li>Clinical Breast Examination</li>
+                          <li>Diagnostic Mammography</li>
+                          <li>Breast Ultrasound</li>
+                          <li>Core Needle Biopsy (if needed)</li>
+                        </ul>
+                      </div>
 
             <div className="btn-row" style={{ flexDirection: "column", gap: "16px" }}>
               <button
