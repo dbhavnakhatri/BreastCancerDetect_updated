@@ -72,7 +72,6 @@ function AppContent() {
   const [isZoomed, setIsZoomed] = useState(false);
   const [uploadHistory, setUploadHistory] = useState([]);
   const [selectedRegion, setSelectedRegion] = useState(null);
-  const [fullscreenRegion, setFullscreenRegion] = useState(null);
 
   // Zoom functionality
   const zoomImageRef = useRef(null);
