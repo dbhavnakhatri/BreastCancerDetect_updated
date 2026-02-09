@@ -57,27 +57,22 @@ services:
     networks:
       - breast-cancer-network
 
-  # Frontend Service - React
+  # Frontend Service - React (Production Build with Nginx)
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        - REACT_APP_API_BASE_URL=http://18.191.185.246:8001
     container_name: breast-cancer-frontend
     ports:
-      - "3001:3001"
-    environment:
-      - REACT_APP_API_BASE_URL=http://18.191.185.246:8001
-      - PORT=3001
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-    command: npm start
+      - "3001:80"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3001"]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:80/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 60s
+      start_period: 10s
     networks:
       - breast-cancer-network
     depends_on:
