@@ -405,7 +405,7 @@ body.fullscreen-open {
 .analysis-card {
   background: #ffffff;
   border-radius: 16px;
-  padding: 24px 32px;
+  padding: 10px 32px;
   border: 1px solid #e5e7eb;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08), 0 2px 12px rgba(0, 0, 0, 0.04);
   color: #1f2937;
@@ -2458,4 +2458,20 @@ body.fullscreen-open {
     width: 10px;
     height: 10px;
   }
+}
+
+/* ========= REGION HIGHLIGHT ANIMATION ========= */
+@keyframes pulse {
+  0%, 100% {
+    box-shadow: 0 0 15px rgba(0, 255, 0, 0.9), inset 0 0 15px rgba(0, 255, 0, 0.3);
+    border-width: 6px;
+  }
+  50% {
+    box-shadow: 0 0 30px rgba(0, 255, 0, 1), inset 0 0 30px rgba(0, 255, 0, 0.5);
+    border-width: 8px;
+  }
+}
+
+[data-region-overlay] {
+  animation: pulse 1s ease-in-out;
 }

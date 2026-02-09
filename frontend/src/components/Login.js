@@ -25,7 +25,7 @@ function Login() {
     setLoading(false);
 
     if (result.success) {
-      navigate('/');
+      navigate('/upload');
     } else {
       setError(result.error || 'Login failed');
     }

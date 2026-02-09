@@ -137,7 +137,7 @@ def generate_view_analysis(analysis, image):
             f"Breast density is {breast_density.split('(')[0].strip().lower()}. "
             f"{'Suspicious findings warrant further evaluation.' if malignant_prob >= 50 else 'No additional suspicious findings detected.'}"
         )
-    else:
+    else: 
         comparison = (
             f"View type could not be determined from filename. "
             f"Breast density is {breast_density.split('(')[0].strip().lower()}. "

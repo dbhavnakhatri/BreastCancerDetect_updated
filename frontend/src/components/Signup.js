@@ -37,7 +37,7 @@ function Signup() {
     setLoading(false);
 
     if (result.success) {
-      navigate('/');
+      navigate('/upload');
     } else {
       setError(result.error || 'Signup failed');
     }

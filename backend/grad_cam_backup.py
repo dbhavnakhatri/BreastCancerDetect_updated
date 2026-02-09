@@ -1068,8 +1068,8 @@ def create_gradcam_visualization(original_image, preprocessed_img, model, confid
             
             filtered_boxes.append((x1, y1, x2, y2, conf))
         
-        # Sort by confidence and limit to 10 regions max
-        filtered_boxes = sorted(filtered_boxes, key=lambda b: b[4], reverse=True)[:10]
+        # Sort by confidence and limit to 50 regions max
+        filtered_boxes = sorted(filtered_boxes, key=lambda b: b[4], reverse=True)[:50]
         
         # Extract detailed findings FIRST (includes cancer type classification)
         detailed_findings = extract_detailed_findings(heatmap, filtered_boxes, original_image.size, confidence)
