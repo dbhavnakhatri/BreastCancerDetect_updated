@@ -620,7 +620,7 @@ function AppContent() {
     if (files.length === 0) return;
 
     setIsAnalyzing(true);
-    setStatusMessage(`Analyzing ${files.length} image(s)...`);
+    setStatusMessage(`Analyzing ${files.length} image(s)... This may take 1-2 minutes on first load as the AI models initialize.`);
     setErrorMessage("");
 
     // Initialize all results with "analyzing" placeholders immediately
@@ -733,7 +733,7 @@ function AppContent() {
     formData.append("file", selectedFile);
 
     setIsAnalyzing(true);
-    setStatusMessage("Uploading image for analysis…");
+    setStatusMessage("Uploading image for analysis… Please wait, this may take 1-2 minutes on first load.");
     setErrorMessage("");
 
     // Auto-detect endpoint based on backend URL
@@ -810,9 +810,9 @@ function AppContent() {
       let errorMsg = "Backend not reachable.";
 
       if (error.name === 'AbortError') {
-        errorMsg = "Request timed out. The backend server may be starting up (this can take 1-2 minutes on free hosting). Please try again.";
+        errorMsg = "Request timed out. The backend server may be starting up (this can take 1-2 minutes on free hosting). Please try again in a moment.";
       } else if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
-        errorMsg = `Cannot connect to backend at ${apiBase}. Please check if the backend is running and CORS is enabled.`;
+        errorMsg = `Cannot connect to backend at ${apiBase}. The server may be waking up from sleep (common on free hosting). Please wait 30 seconds and try again.`;
       } else if (error.message) {
         errorMsg = error.message;
       }
@@ -1246,6 +1246,9 @@ function AppContent() {
           <div className="upload-card">
             <h3>Upload mammogram (DICOM)</h3>
             <p>Max 200MB • Supported formats: DICOM, JPG, PNG • Upload 1 or more images</p>
+            <p style={{ fontSize: '0.8rem', color: '#9ca3af', marginTop: '8px', marginBottom: '16px' }}>
+              ⏱️ First analysis may take 1-2 minutes as AI models initialize. Subsequent analyses are faster.
+            </p>
             <div
               className={`dropzone`}
               onClick={() => {
