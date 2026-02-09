@@ -105,6 +105,8 @@ jobs:
         working-directory: ./frontend
         env:
           REACT_APP_API_BASE_URL: http://localhost:8001
+          GENERATE_SOURCEMAP: false
+          CI: true
         run: npm run build
 
   # ==================== BUILD BACKEND ====================
