@@ -7,6 +7,7 @@ import { FiUploadCloud, FiLogOut, FiDownload } from "react-icons/fi";
 import { useAuth } from "./context/AuthContext";
 import { useNavigate } from "react-router-dom";
 import FullComparisonView from "./components/FullComparisonView";
+import html2pdf from "html2pdf.js";
 
 const getDefaultApiBase = () => {
   // Auto-detect: Use local backend when running on localhost
@@ -47,9 +48,9 @@ const asDataUrl = (value) => (value ? `data:image/png;base64,${value}` : null);
 
 function AppContent() {
   const apiBase = useMemo(() => getDefaultApiBase(), []);
+  const navigate = useNavigate();
   const apiUrl = (endpoint) => buildEndpoint(apiBase, endpoint);
   const { user, logout } = useAuth();
-  const navigate = useNavigate();
 
   const [results, setResults] = useState({});
   const [file, setFile] = useState(null);
@@ -75,6 +76,7 @@ function AppContent() {
 
   // Zoom functionality
   const zoomImageRef = useRef(null);
+  const reportRef = useRef(null); // Reference for PDF generation
 
   const toProperCase = (text) => {
     if (!text) return '';
@@ -172,6 +174,15 @@ function AppContent() {
       });
   }; */
 
+  // Handle routing based on analysis state
+  useEffect(() => {
+    if (analysisDone) {
+      navigate('/analysis', { replace: true });
+    } else {
+      navigate('/upload', { replace: true });
+    }
+  }, [analysisDone, navigate]);
+
   // Reset zoom when visual tab changes
   useEffect(() => {
     const img = zoomImageRef.current;
@@ -216,21 +227,98 @@ function AppContent() {
     }
   };
 
-  // Zoom to specific region when clicked from list - now opens fullscreen
+  // Zoom to specific region when clicked from list - scrolls and highlights the region
   const zoomToRegion = (region) => {
     const img = zoomImageRef.current;
     if (!img) return;
 
-    // If clicking the same region that's already selected, close fullscreen
-    if (selectedRegion === region.id && fullscreenRegion) {
-      setFullscreenRegion(null);
+    // If clicking the same region that's already selected, deselect it
+    if (selectedRegion === region.id) {
       setSelectedRegion(null);
       return;
     }
 
-    // Open fullscreen view with the region
+    // Set the selected region to highlight it
     setSelectedRegion(region.id);
-    setFullscreenRegion(region);
+
+    // Get bbox coordinates
+    let x1, y1, x2, y2;
+    if (Array.isArray(region.bbox)) {
+      [x1, y1, x2, y2] = region.bbox;
+    } else {
+      x1 = region.bbox.x1;
+      y1 = region.bbox.y1;
+      x2 = region.bbox.x2;
+      y2 = region.bbox.y2;
+    }
+
+    // Calculate the center of the region
+    const centerX = (x1 + x2) / 2;
+    const centerY = (y1 + y2) / 2;
+
+    // Get image dimensions
+    const imgNaturalWidth = img.naturalWidth;
+    const imgNaturalHeight = img.naturalHeight;
+    const displayedWidth = img.clientWidth;
+    const displayedHeight = img.clientHeight;
+
+    // Calculate scale
+    const scaleX = displayedWidth / imgNaturalWidth;
+    const scaleY = displayedHeight / imgNaturalHeight;
+    const scale = Math.min(scaleX, scaleY);
+
+    // Calculate actual displayed image dimensions
+    const actualDisplayWidth = imgNaturalWidth * scale;
+    const actualDisplayHeight = imgNaturalHeight * scale;
+
+    // Calculate offset (letterboxing)
+    const offsetX = (displayedWidth - actualDisplayWidth) / 2;
+    const offsetY = (displayedHeight - actualDisplayHeight) / 2;
+
+    // Convert center coordinates to displayed pixels
+    const displayCenterX = centerX * scale + offsetX;
+    const displayCenterY = centerY * scale + offsetY;
+
+    // Get the image container's position
+    const imgRect = img.getBoundingClientRect();
+    const containerRect = img.parentElement.getBoundingClientRect();
+
+    // Calculate scroll position to center the region
+    const scrollX = imgRect.left + displayCenterX - containerRect.left - containerRect.width / 2;
+    const scrollY = imgRect.top + displayCenterY - containerRect.top - containerRect.height / 2;
+
+    // Smooth scroll to the region
+    img.parentElement.scrollTo({
+      left: img.parentElement.scrollLeft + scrollX,
+      top: img.parentElement.scrollTop + scrollY,
+      behavior: 'smooth'
+    });
+
+    // Optional: Add a pulsing animation to the highlighted region
+    setTimeout(() => {
+      const overlay = document.querySelector('[data-region-overlay]');
+      if (overlay) {
+        overlay.style.animation = 'pulse 1s ease-in-out 2';
+      }
+    }, 500);
+  };
+
+  // Scroll to mammogram image when clicking comprehensive analysis boxes
+  const scrollToMammogram = (analysisType) => {
+    // Switch to heatmap overlay tab to show the full analysis
+    setVisualTab('overlay');
+    
+    // Scroll to the image section
+    const imageSection = document.querySelector('[data-mammogram-image]');
+    if (imageSection) {
+      imageSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      
+      // Add a brief highlight effect to the image
+      imageSection.style.boxShadow = '0 0 30px rgba(233, 30, 99, 0.6)';
+      setTimeout(() => {
+        imageSection.style.boxShadow = '';
+      }, 2000);
+    }
   };
 
 
@@ -301,6 +389,7 @@ function AppContent() {
 
     return (
       <div
+        data-region-overlay
         style={{
           position: 'absolute',
           left: `${displayX1}px`,
@@ -308,10 +397,11 @@ function AppContent() {
           width: `${displayBoxWidth}px`,
           height: `${displayBoxHeight}px`,
           border: '6px solid #00FF00',
-          boxShadow: '0 0 15px rgba(0, 255, 0, 0.9)',
+          boxShadow: '0 0 15px rgba(0, 255, 0, 0.9), inset 0 0 15px rgba(0, 255, 0, 0.3)',
           pointerEvents: 'none',
           zIndex: 5,
-          boxSizing: 'border-box'
+          boxSizing: 'border-box',
+          transition: 'all 0.3s ease'
         }}
       />
     );
@@ -469,6 +559,7 @@ function AppContent() {
     setDetailsTab("clinical");
     setStatusMessage("");
     setErrorMessage("");
+    navigate('/upload'); // Navigate back to upload page
   };
 
   // Analyze a single file and return the result
@@ -563,6 +654,7 @@ function AppContent() {
         // Show results section after FIRST image completes
         if (i === 0) {
           setAnalysisDone(true); // Now show the results section
+          navigate('/analysis'); // Navigate to analysis page
           setVisualTab("bbox");
           setDetailsTab("clinical");
         }
@@ -608,6 +700,7 @@ function AppContent() {
         // Show results section after FIRST image completes (even if error)
         if (i === 0) {
           setAnalysisDone(true); // Now show the results section
+          navigate('/analysis'); // Navigate to analysis page
           setVisualTab("bbox");
           setDetailsTab("clinical");
         }
@@ -708,6 +801,7 @@ function AppContent() {
       setResults(resultData);
 
       setAnalysisDone(true);
+      navigate('/analysis'); // Navigate to analysis page
       setVisualTab("bbox");
       setDetailsTab("clinical");
       setStatusMessage("Analysis complete.");
@@ -879,6 +973,35 @@ function AppContent() {
     } finally {
       setIsGeneratingReport(false);
     }
+  };
+
+  // Function to download the frontend report as PDF (visual report)
+  const handleDownloadFrontendReport = () => {
+    const element = reportRef.current;
+    if (!element) {
+      console.error("Report element not found");
+      setErrorMessage("Unable to generate visual report. Please try again.");
+      return;
+    }
+
+    const opt = {
+      margin: [10, 10, 10, 10],
+      filename: `mammogram_visual_report_${file?.name || 'report'}.pdf`,
+      image: { type: 'jpeg', quality: 0.98 },
+      html2canvas: { 
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#ffffff'
+      },
+      jsPDF: { 
+        unit: 'mm', 
+        format: 'a4', 
+        orientation: 'portrait' 
+      }
+    };
+
+    html2pdf().set(opt).from(element).save();
   };
 
   // eslint-disable-next-line no-unused-vars
@@ -1289,6 +1412,39 @@ function AppContent() {
       ) : (allResults.length > 1 || secondResults) ? (
         /* COMPARISON VIEW - When both images are analyzed, show ONLY the tabbed comparison */
         <main className="analysis-container">
+          {/* Back Button - Top Left */}
+          <button
+            onClick={handleBackToUpload}
+            style={{
+              position: 'absolute',
+              top: '20px',
+              left: '20px',
+              background: 'rgba(255, 255, 255, 0.95)',
+              border: '2px solid #C2185B',
+              color: '#C2185B',
+              padding: '8px 16px',
+              borderRadius: '8px',
+              fontSize: '0.9rem',
+              fontWeight: '600',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
+              transition: 'all 0.2s ease',
+              zIndex: 100
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = '#C2185B';
+              e.currentTarget.style.color = 'white';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.95)';
+              e.currentTarget.style.color = '#C2185B';
+            }}
+          >
+            ← Back
+          </button>
           <section className="analysis-card">
             <FullComparisonView
               results={results}
@@ -1313,25 +1469,44 @@ function AppContent() {
               file={file}
               secondFile={secondFile}
             />
-
-            <div className="btn-row" style={{ display: "flex", justifyContent: "center", marginTop: "20px" }}>
-              <button
-                className="btn-secondary"
-                onClick={handleBackToUpload}
-                style={{
-                  padding: "14px 40px",
-                  fontSize: "1rem",
-                  minWidth: "280px"
-                }}
-              >
-                Analyze Another Image
-              </button>
-            </div>
           </section>
         </main>
       ) : (
         /* SINGLE IMAGE VIEW - When only one image is analyzed */
         <main className="analysis-container">
+          {/* Back Button - Top Left */}
+          <button
+            onClick={handleBackToUpload}
+            style={{
+              position: 'absolute',
+              top: '20px',
+              left: '20px',
+              background: 'rgba(255, 255, 255, 0.95)',
+              border: '2px solid #C2185B',
+              color: '#C2185B',
+              padding: '8px 16px',
+              borderRadius: '8px',
+              fontSize: '0.9rem',
+              fontWeight: '600',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
+              transition: 'all 0.2s ease',
+              zIndex: 100
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = '#C2185B';
+              e.currentTarget.style.color = 'white';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.95)';
+              e.currentTarget.style.color = '#C2185B';
+            }}
+          >
+            ← Back
+          </button>
           <section className="analysis-card">
             <div className="result-header" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
               <h2 className={`result-title ${getResultClass()}`}>
@@ -1353,6 +1528,8 @@ function AppContent() {
               </div>
             )}
 
+            {/* Wrap report content with ref for PDF generation */}
+            <div ref={reportRef}>
             {/* Prediction Metrics Section */}
             <section className="section">
               <h3 className="section-title">Prediction Metrics</h3>
@@ -1433,7 +1610,7 @@ function AppContent() {
               <div className="visual-panel">
                 <div style={{ display: 'flex', gap: '20px' }}>
                   {/* Main Image Container */}
-                  <div className="visual-image-card" style={{ position: 'relative', flex: (visualTab === 'bbox' || visualTab === 'original') && results.findings?.regions?.length > 0 ? '1 1 65%' : '1 1 100%' }}>
+                  <div className="visual-image-card" data-mammogram-image style={{ position: 'relative', flex: (visualTab === 'bbox' || visualTab === 'original') && results.findings?.regions?.length > 0 ? '1 1 65%' : '1 1 100%' }}>
                     {getActiveVisualImage() ? (
                       <>
                         <div
@@ -1678,7 +1855,7 @@ function AppContent() {
 {/* Row 3: Image Quality - Full Width */}
                         <div >
 
-                          {results.findings.comprehensive_analysis.image_quality && (
+                          {results?.findings?.comprehensive_analysis?.image_quality && (
                             <div style={{ padding: '10px', background: 'linear-gradient(135deg, #ECEFF1 0%, #CFD8DC 100%)', borderRadius: '12px', boxShadow: '0 2px 8px rgba(69, 90, 100, 0.15)', marginBottom: '4px', marginTop: '10px'}}>
                               <div style={{ fontWeight: '700', color: '#455A64', marginBottom: '10px', fontSize: '0.95rem', gap: '6px', textAlign: 'center' }}>
                                 <span style={{ fontSize: '1.1rem' }}>📷</span> Image Quality Assessment
@@ -1713,10 +1890,31 @@ function AppContent() {
                         📊 Comprehensive Image Analysis
                       </p>
                       {/* Row 4: Calcification Analysis - Alert Style if detected */}
-                      {results.findings.comprehensive_analysis.calcification_analysis?.detected && (
-                        <div style={{ padding: '14px', background: 'linear-gradient(135deg, #FFEBEE 0%, #FFCDD2 100%)', borderRadius: '12px', border: '2px solid #EF5350', boxShadow: '0 2px 12px rgba(239, 83, 80, 0.25)', marginBottom: '14px' }}>
-                          <div style={{ fontWeight: '700', color: '#C62828', marginBottom: '12px', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <span style={{ fontSize: '1.2rem' }}>⚠️</span> Calcification Analysis - Attention Required
+                      {results?.findings?.comprehensive_analysis?.calcification_analysis?.detected && (
+                        <div 
+                          onClick={() => scrollToMammogram('calcification')}
+                          style={{ 
+                            padding: '14px', 
+                            background: 'linear-gradient(135deg, #FFEBEE 0%, #FFCDD2 100%)', 
+                            borderRadius: '12px', 
+                            border: '2px solid #EF5350', 
+                            boxShadow: '0 2px 12px rgba(239, 83, 80, 0.25)', 
+                            marginBottom: '14px',
+                            cursor: 'pointer',
+                            transition: 'all 0.3s ease'
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.transform = 'translateY(-4px)';
+                            e.currentTarget.style.boxShadow = '0 6px 20px rgba(239, 83, 80, 0.35)';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.transform = 'translateY(0)';
+                            e.currentTarget.style.boxShadow = '0 2px 12px rgba(239, 83, 80, 0.25)';
+                          }}
+                        >
+                          <div style={{ fontWeight: '700', color: '#C62828', marginBottom: '12px', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'space-between' }}>
+                            <span><span style={{ fontSize: '1.2rem' }}>⚠️</span> Calcification Analysis - Attention Required</span>
+                            <span style={{ fontSize: '0.7rem', opacity: 0.7 }}>🔍 Click to view</span>
                           </div>
                           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', fontSize: '0.85rem' }}>
                             <div style={{ padding: '10px 12px', background: 'rgba(255,255,255,0.8)', borderRadius: '8px', textAlign: 'center' }}>
@@ -1744,10 +1942,29 @@ function AppContent() {
                       {/* Row 1: Primary Analysis - Breast Density & Tissue Texture */}
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '14px', marginBottom: '14px' }}>
                         {/* Breast Density */}
-                        {results.findings.comprehensive_analysis.breast_density && (
-                          <div style={{ padding: '14px', background: 'linear-gradient(135deg, #E3F2FD 0%, #BBDEFB 100%)', borderRadius: '12px', boxShadow: '0 2px 8px rgba(21, 101, 192, 0.15)' }}>
-                            <div style={{ fontWeight: '700', color: '#1565C0', marginBottom: '10px', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              <span style={{ fontSize: '1.1rem' }}>🔬</span> Breast Density (ACR BI-RADS)
+                        {results?.findings?.comprehensive_analysis?.breast_density && (
+                          <div 
+                            onClick={() => scrollToMammogram('breast_density')}
+                            style={{ 
+                              padding: '14px', 
+                              background: 'linear-gradient(135deg, #E3F2FD 0%, #BBDEFB 100%)', 
+                              borderRadius: '12px', 
+                              boxShadow: '0 2px 8px rgba(21, 101, 192, 0.15)',
+                              cursor: 'pointer',
+                              transition: 'all 0.3s ease'
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.transform = 'translateY(-4px)';
+                              e.currentTarget.style.boxShadow = '0 6px 16px rgba(21, 101, 192, 0.25)';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.transform = 'translateY(0)';
+                              e.currentTarget.style.boxShadow = '0 2px 8px rgba(21, 101, 192, 0.15)';
+                            }}
+                          >
+                            <div style={{ fontWeight: '700', color: '#1565C0', marginBottom: '10px', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'space-between' }}>
+                              <span><span style={{ fontSize: '1.1rem' }}>🔬</span> Breast Density (ACR BI-RADS)</span>
+                              <span style={{ fontSize: '0.7rem', opacity: 0.7 }}>🔍 Click to view</span>
                             </div>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '0.85rem' }}>
                               <div style={{ padding: '6px 8px', background: 'rgba(255,255,255,0.6)', borderRadius: '6px' }}><span style={{ color: '#666' }}>Category:</span> <strong style={{ color: '#1565C0' }}>Type {results.findings.comprehensive_analysis.breast_density.category}</strong></div>
@@ -1760,10 +1977,29 @@ function AppContent() {
                         )}
 
                         {/* Tissue Texture */}
-                        {results.findings.comprehensive_analysis.tissue_texture && (
-                          <div style={{ padding: '14px', background: 'linear-gradient(135deg, #F3E5F5 0%, #E1BEE7 100%)', borderRadius: '12px', boxShadow: '0 2px 8px rgba(123, 31, 162, 0.15)' }}>
-                            <div style={{ fontWeight: '700', color: '#7B1FA2', marginBottom: '10px', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              <span style={{ fontSize: '1.1rem' }}>🧬</span> Tissue Texture Analysis
+                        {results?.findings?.comprehensive_analysis?.tissue_texture && (
+                          <div 
+                            onClick={() => scrollToMammogram('tissue_texture')}
+                            style={{ 
+                              padding: '14px', 
+                              background: 'linear-gradient(135deg, #F3E5F5 0%, #E1BEE7 100%)', 
+                              borderRadius: '12px', 
+                              boxShadow: '0 2px 8px rgba(123, 31, 162, 0.15)',
+                              cursor: 'pointer',
+                              transition: 'all 0.3s ease'
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.transform = 'translateY(-4px)';
+                              e.currentTarget.style.boxShadow = '0 6px 16px rgba(123, 31, 162, 0.25)';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.transform = 'translateY(0)';
+                              e.currentTarget.style.boxShadow = '0 2px 8px rgba(123, 31, 162, 0.15)';
+                            }}
+                          >
+                            <div style={{ fontWeight: '700', color: '#7B1FA2', marginBottom: '10px', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'space-between' }}>
+                              <span><span style={{ fontSize: '1.1rem' }}>🧬</span> Tissue Texture Analysis</span>
+                              <span style={{ fontSize: '0.7rem', opacity: 0.7 }}>🔍 Click to view</span>
                             </div>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '0.85rem' }}>
                               <div style={{ padding: '6px 8px', background: 'rgba(255,255,255,0.6)', borderRadius: '6px' }}><span style={{ color: '#666' }}>Pattern:</span> <strong style={{ color: '#7B1FA2' }}>{results.findings.comprehensive_analysis.tissue_texture.pattern}</strong></div>
@@ -1777,10 +2013,29 @@ function AppContent() {
                       {/* Row 2: Secondary Analysis - Symmetry, Skin & Nipple, Vascular */}
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '14px', marginBottom: '14px' }}>
                         {/* Symmetry Analysis */}
-                        {results.findings.comprehensive_analysis.symmetry && (
-                          <div style={{ padding: '14px', background: 'linear-gradient(135deg, #E8F5E9 0%, #C8E6C9 100%)', borderRadius: '12px', boxShadow: '0 2px 8px rgba(46, 125, 50, 0.15)' }}>
-                            <div style={{ fontWeight: '700', color: '#2E7D32', marginBottom: '10px', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              <span style={{ fontSize: '1.1rem' }}>⚖️</span> Symmetry
+                        {results?.findings?.comprehensive_analysis?.symmetry && (
+                          <div 
+                            onClick={() => scrollToMammogram('symmetry')}
+                            style={{ 
+                              padding: '14px', 
+                              background: 'linear-gradient(135deg, #E8F5E9 0%, #C8E6C9 100%)', 
+                              borderRadius: '12px', 
+                              boxShadow: '0 2px 8px rgba(46, 125, 50, 0.15)',
+                              cursor: 'pointer',
+                              transition: 'all 0.3s ease'
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.transform = 'translateY(-4px)';
+                              e.currentTarget.style.boxShadow = '0 6px 16px rgba(46, 125, 50, 0.25)';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.transform = 'translateY(0)';
+                              e.currentTarget.style.boxShadow = '0 2px 8px rgba(46, 125, 50, 0.15)';
+                            }}
+                          >
+                            <div style={{ fontWeight: '700', color: '#2E7D32', marginBottom: '10px', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'space-between' }}>
+                              <span><span style={{ fontSize: '1.1rem' }}>⚖️</span> Symmetry</span>
+                              <span style={{ fontSize: '0.7rem', opacity: 0.7 }}>🔍 Click to view</span>
                             </div>
                             <div style={{ display: 'grid', gap: '6px', fontSize: '0.85rem' }}>
                               <div style={{ padding: '6px 8px', background: 'rgba(255,255,255,0.6)', borderRadius: '6px' }}><span style={{ color: '#666' }}>Assessment:</span> <strong style={{ color: '#2E7D32' }}>{results.findings.comprehensive_analysis.symmetry.assessment}</strong></div>
@@ -1791,10 +2046,29 @@ function AppContent() {
                         )}
 
                         {/* Skin & Nipple */}
-                        {results.findings.comprehensive_analysis.skin_nipple && (
-                          <div style={{ padding: '14px', background: 'linear-gradient(135deg, #FFF3E0 0%, #FFE0B2 100%)', borderRadius: '12px', boxShadow: '0 2px 8px rgba(230, 81, 0, 0.15)' }}>
-                            <div style={{ fontWeight: '700', color: '#E65100', marginBottom: '10px', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              <span style={{ fontSize: '1.1rem' }}>👁️</span> Skin & Nipple
+                        {results?.findings?.comprehensive_analysis?.skin_nipple && (
+                          <div 
+                            onClick={() => scrollToMammogram('skin_nipple')}
+                            style={{ 
+                              padding: '14px', 
+                              background: 'linear-gradient(135deg, #FFF3E0 0%, #FFE0B2 100%)', 
+                              borderRadius: '12px', 
+                              boxShadow: '0 2px 8px rgba(230, 81, 0, 0.15)',
+                              cursor: 'pointer',
+                              transition: 'all 0.3s ease'
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.transform = 'translateY(-4px)';
+                              e.currentTarget.style.boxShadow = '0 6px 16px rgba(230, 81, 0, 0.25)';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.transform = 'translateY(0)';
+                              e.currentTarget.style.boxShadow = '0 2px 8px rgba(230, 81, 0, 0.15)';
+                            }}
+                          >
+                            <div style={{ fontWeight: '700', color: '#E65100', marginBottom: '10px', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'space-between' }}>
+                              <span><span style={{ fontSize: '1.1rem' }}>👁️</span> Skin & Nipple</span>
+                              <span style={{ fontSize: '0.7rem', opacity: 0.7 }}>🔍 Click to view</span>
                             </div>
                             <div style={{ display: 'grid', gap: '6px', fontSize: '0.85rem' }}>
                               <div style={{ padding: '6px 8px', background: 'rgba(255,255,255,0.6)', borderRadius: '6px' }}><span style={{ color: '#666' }}>Skin:</span> <strong style={{ color: '#E65100' }}>{results.findings.comprehensive_analysis.skin_nipple.skin_status}</strong></div>
@@ -1805,10 +2079,29 @@ function AppContent() {
                         )}
 
                         {/* Vascular Patterns */}
-                        {results.findings.comprehensive_analysis.vascular_patterns && (
-                          <div style={{ padding: '14px', background: 'linear-gradient(135deg, #FCE4EC 0%, #F8BBD9 100%)', borderRadius: '12px', boxShadow: '0 2px 8px rgba(194, 24, 91, 0.15)' }}>
-                            <div style={{ fontWeight: '700', color: '#C2185B', marginBottom: '10px', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              <span style={{ fontSize: '1.1rem' }}>🩸</span> Vascular Pattern
+                        {results?.findings?.comprehensive_analysis?.vascular_patterns && (
+                          <div 
+                            onClick={() => scrollToMammogram('vascular')}
+                            style={{ 
+                              padding: '14px', 
+                              background: 'linear-gradient(135deg, #FCE4EC 0%, #F8BBD9 100%)', 
+                              borderRadius: '12px', 
+                              boxShadow: '0 2px 8px rgba(194, 24, 91, 0.15)',
+                              cursor: 'pointer',
+                              transition: 'all 0.3s ease'
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.transform = 'translateY(-4px)';
+                              e.currentTarget.style.boxShadow = '0 6px 16px rgba(194, 24, 91, 0.25)';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.transform = 'translateY(0)';
+                              e.currentTarget.style.boxShadow = '0 2px 8px rgba(194, 24, 91, 0.15)';
+                            }}
+                          >
+                            <div style={{ fontWeight: '700', color: '#C2185B', marginBottom: '10px', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'space-between' }}>
+                              <span><span style={{ fontSize: '1.1rem' }}>🩸</span> Vascular Pattern</span>
+                              <span style={{ fontSize: '0.7rem', opacity: 0.7 }}>🔍 Click to view</span>
                             </div>
                             <div style={{ display: 'grid', gap: '6px', fontSize: '0.85rem' }}>
                               <div style={{ padding: '6px 8px', background: 'rgba(255,255,255,0.6)', borderRadius: '6px' }}><span style={{ color: '#666' }}>Pattern:</span> <strong style={{ color: '#C2185B' }}>{results.findings.comprehensive_analysis.vascular_patterns.pattern}</strong></div>
@@ -2372,18 +2665,85 @@ function AppContent() {
                 )}
               </div>
             </section>
-            <div className="urgent-box malignant">
-                        <h5>⚕️ Recommended Action</h5>
-                        <p>Based on these findings, consultation with an oncologist or breast specialist is strongly recommended.</p>
-                        <ul className="checklist">
-                          <li>Clinical Breast Examination</li>
-                          <li>Diagnostic Mammography</li>
-                          <li>Breast Ultrasound</li>
-                          <li>Core Needle Biopsy (if needed)</li>
-                        </ul>
-                      </div>
+            {/* Dynamic Recommended Action based on findings */}
+            {(() => {
+              const recommendations = [];
+              const urgencyLevel = results.result?.toLowerCase().includes("malignant") ? "high" : "low";
+              
+              // Collect recommendations from regions
+              if (results.findings?.regions && results.findings.regions.length > 0) {
+                results.findings.regions.forEach(region => {
+                  if (region.recommended_action && !recommendations.includes(region.recommended_action)) {
+                    recommendations.push(region.recommended_action);
+                  }
+                });
+              }
+              
+              // Add recommendations from calcification analysis
+              if (results?.findings?.comprehensive_analysis?.calcification_analysis?.detected) {
+                const calcRec = results.findings.comprehensive_analysis.calcification_analysis.recommendation;
+                if (calcRec && !recommendations.includes(calcRec)) {
+                  recommendations.push(calcRec);
+                }
+              }
+              
+              // Add recommendations from breast density
+              if (results?.findings?.comprehensive_analysis?.breast_density?.masking_risk === "High") {
+                const densityRec = "Consider supplemental screening (ultrasound or MRI) due to high breast density";
+                if (!recommendations.includes(densityRec)) {
+                  recommendations.push(densityRec);
+                }
+              }
+              
+              // Add recommendations from skin/nipple findings
+              if (results?.findings?.comprehensive_analysis?.skin_nipple?.skin_concern_level === "High" || 
+                  results?.findings?.comprehensive_analysis?.skin_nipple?.nipple_retraction === "Present") {
+                const skinRec = "Clinical examination for skin changes and nipple abnormalities";
+                if (!recommendations.includes(skinRec)) {
+                  recommendations.push(skinRec);
+                }
+              }
+              
+              // Default recommendations if none found
+              if (recommendations.length === 0) {
+                if (urgencyLevel === "high") {
+                  recommendations.push("Immediate consultation with oncologist or breast specialist");
+                  recommendations.push("Diagnostic mammography and ultrasound");
+                  recommendations.push("Consider biopsy for tissue confirmation");
+                } else {
+                  recommendations.push("Continue routine screening schedule");
+                  recommendations.push("Monthly self-breast examinations");
+                  recommendations.push("Report any new changes to your healthcare provider");
+                }
+              }
+              
+              return (
+                <div className={`urgent-box ${urgencyLevel === "high" ? "malignant" : ""}`} 
+                     style={urgencyLevel === "low" ? { 
+                       background: 'linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)', 
+                       border: '1px solid #bbf7d0' 
+                     } : {}}>
+                  <h5 style={urgencyLevel === "low" ? { color: '#059669' } : {}}>
+                    ⚕️ Recommended Action
+                  </h5>
+                  <p style={urgencyLevel === "low" ? { color: '#047857' } : {}}>
+                    {urgencyLevel === "high" 
+                      ? "Based on these findings, the following actions are strongly recommended:"
+                      : "Based on the analysis, continue with preventive care:"}
+                  </p>
+                  <ul className="checklist" style={urgencyLevel === "low" ? { listStyle: 'none' } : {}}>
+                    {recommendations.map((rec, idx) => (
+                      <li key={idx} style={urgencyLevel === "low" ? { color: '#059669' } : {}}>
+                        {rec}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              );
+            })()}
+            </div> {/* Close ref wrapper */}
 
-            <div className="btn-row" style={{ flexDirection: "column", gap: "16px" }}>
+            <div className="btn-row" style={{ flexDirection: "row", gap: "16px", justifyContent: "center", flexWrap: "wrap" }}>
               <button
                 className="btn-primary"
                 onClick={handleDownloadReport}
@@ -2391,8 +2751,18 @@ function AppContent() {
               >
                 {isGeneratingReport ? "Preparing Report…" : "Download PDF Report"}
               </button>
-              <button className="btn-secondary" onClick={handleBackToUpload}>
-                Analyze Another Image
+              <button
+                className="btn-primary"
+                onClick={handleDownloadFrontendReport}
+                style={{
+                  background: 'linear-gradient(135deg, #9C27B0 0%, #BA68C8 100%)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}
+              >
+                <FiDownload size={18} />
+                Download Visual Report
               </button>
             </div>
 

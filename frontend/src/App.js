@@ -19,6 +19,24 @@ function App() {
         path="/"
         element={
           <ProtectedRoute>
+            <Navigate to="/upload" replace />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/upload"
+        element={
+          <ProtectedRoute>
+            <Dashboard>
+              <AppContent />
+            </Dashboard>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/analysis"
+        element={
+          <ProtectedRoute>
             <Dashboard>
               <AppContent />
             </Dashboard>
