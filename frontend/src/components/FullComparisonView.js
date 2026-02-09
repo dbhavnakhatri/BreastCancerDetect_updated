@@ -506,14 +506,14 @@ const toProperCase = (text) => {
                       <div style={{
                         position: 'absolute', top: '12px', left: '12px',
                         background: 'linear-gradient(135deg, rgba(0, 0, 0, 0.85) 0%, rgba(0, 0, 0, 0.75) 100%)',
-                        color: 'white', padding: '10px 18px', borderRadius: '8px', fontWeight: '700', fontSize: '1.1rem',
+                        color: 'white', padding: '12px 20px', borderRadius: '8px', fontWeight: '700', fontSize: '1.2rem',
                         zIndex: 10, boxShadow: '0 4px 12px rgba(0, 0, 0, 0.4)', backdropFilter: 'blur(10px)',
                         border: '2px solid rgba(255, 255, 255, 0.2)', display: 'flex', flexDirection: 'column', gap: '4px'
                       }}>
-                        <div style={{ fontSize: '1.3rem', letterSpacing: '1px', color: '#00D9FF', textShadow: '0 0 10px rgba(0, 217, 255, 0.5)' }}>
+                        <div style={{ fontSize: '1.5rem', letterSpacing: '1px', color: '#00D9FF', textShadow: '0 0 10px rgba(0, 217, 255, 0.5)' }}>
                           {currentResults.view_analysis.view_code} View
                         </div>
-                        <div style={{ fontSize: '0.75rem', fontWeight: '500', color: 'rgba(255, 255, 255, 0.85)', letterSpacing: '0.5px' }}>
+                        <div style={{ fontSize: '0.85rem', fontWeight: '500', color: 'rgba(255, 255, 255, 0.85)', letterSpacing: '0.5px' }}>
                           {currentResults.view_analysis.view_code.includes('MLO') ? 'Mediolateral Oblique: Angled side view' : 'Craniocaudal: Top-to-bottom view'}
                         </div>
                       </div>

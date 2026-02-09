@@ -5,6 +5,40 @@
   box-sizing: border-box;
 }
 
+html {
+  /* Base font size - responsive scaling */
+  font-size: 16px;
+  /* Prevent text from being too small */
+  -webkit-text-size-adjust: 100%;
+  -ms-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+/* Responsive font scaling for better readability on all devices */
+@media screen and (max-width: 768px) {
+  html {
+    font-size: 15px;
+  }
+}
+
+@media screen and (min-width: 1920px) {
+  html {
+    font-size: 18px;
+  }
+}
+
+@media screen and (min-width: 2560px) {
+  html {
+    font-size: 22px;
+  }
+}
+
+@media screen and (min-width: 3840px) {
+  html {
+    font-size: 24px;
+  }
+}
+
 body,
 html,
 #root,
