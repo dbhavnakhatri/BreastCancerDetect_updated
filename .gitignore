@@ -9,6 +9,11 @@ dist/
 build/
 *.egg
 
+# Environment variables
+.env
+.env.local
+.env.*.local
+
 # Virtual Environment
 venv/
 env/
