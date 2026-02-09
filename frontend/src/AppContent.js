@@ -1626,10 +1626,10 @@ function AppContent() {
                               left: '12px',
                               background: 'linear-gradient(135deg, rgba(0, 0, 0, 0.85) 0%, rgba(0, 0, 0, 0.75) 100%)',
                               color: 'white',
-                              padding: '10px 18px',
+                              padding: '12px 20px',
                               borderRadius: '8px',
                               fontWeight: '700',
-                              fontSize: '1.1rem',
+                              fontSize: '1.2rem',
                               zIndex: 10,
                               boxShadow: '0 4px 12px rgba(0, 0, 0, 0.4)',
                               backdropFilter: 'blur(10px)',
@@ -1639,7 +1639,7 @@ function AppContent() {
                               gap: '4px'
                             }}>
                               <div style={{
-                                fontSize: '1.3rem',
+                                fontSize: '1.5rem',
                                 letterSpacing: '1px',
                                 color: '#00D9FF',
                                 textShadow: '0 0 10px rgba(0, 217, 255, 0.5)'
@@ -1647,7 +1647,7 @@ function AppContent() {
                                 {results.view_analysis.view_code} View
                               </div>
                               <div style={{
-                                fontSize: '0.75rem',
+                                fontSize: '0.85rem',
                                 fontWeight: '500',
                                 color: 'rgba(255, 255, 255, 0.85)',
                                 letterSpacing: '0.5px'
