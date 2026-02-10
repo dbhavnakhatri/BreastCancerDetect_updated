@@ -1229,7 +1229,7 @@ function AppContent() {
 
       <header className="header">
         <div className="logo">
-          <img src="/Group 28.png" alt="logo" />
+          <img src="/logo.png" alt="logo" />
           <span>Breast Cancer Detection System</span>
         </div>
         <div className="header-right">
@@ -2366,18 +2366,18 @@ function AppContent() {
                         : '#2E7D32'
                       }`
                   }}>
-                    <div style={{ fontSize: '0.75rem', color: '#666', marginBottom: '4px' }}>Impression</div>
+                    <div style={{ fontSize: '0.75rem', color: '#666', marginBottom: '4px', textAlign: 'center' }}>Impression</div>
                     <div style={{
                       fontWeight: '600',
                       color: results.view_analysis.suspicion_level === 'High'
                         ? '#C62828'
                         : results.view_analysis.suspicion_level === 'Intermediate'
                           ? '#F57C00'
-                          : '#2E7D32'
+                          : '#2E7D32', textAlign: 'center'
                     }}>
                       {results.view_analysis.impression || 'Analysis complete'}
                     </div>
-                    <div style={{ fontSize: '0.8rem', color: '#666', marginTop: '6px' }}>
+                    <div style={{ fontSize: '0.8rem', color: '#666', marginTop: '6px', textAlign: 'center' }}>
                       Suspicion Level: <strong>{results.view_analysis.suspicion_level || 'N/A'}</strong> |
                       Confidence: <strong>{results.view_analysis.confidence_score || 'N/A'}</strong>
                     </div>

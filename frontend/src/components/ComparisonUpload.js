@@ -318,7 +318,7 @@ function ComparisonUpload() {
 
       <header className="header">
         <div className="logo">
-          <img src="/Group 28.png" alt="logo" />
+          <img src="/logo.png" alt="logo" />
           <span>Breast Cancer Detection System</span>
         </div>
         <div className="header-right">
