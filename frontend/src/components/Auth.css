@@ -90,6 +90,51 @@
   color: #9C8A9E;
 }
 
+/* ========= PASSWORD INPUT WITH TOGGLE ========= */
+.password-input-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+.password-input {
+  padding-right: 45px !important;
+}
+
+.password-toggle-btn {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #9C27B0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  transition: color 0.2s ease;
+  border-radius: 4px;
+}
+
+.password-toggle-btn:hover {
+  color: #7B1FA2;
+}
+
+.password-toggle-btn:focus {
+  outline: 2px solid #ec4899;
+  outline-offset: 2px;
+}
+
+.password-toggle-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.password-toggle-btn:active {
+  transform: translateY(-50%) scale(0.95);
+}
+
 /* ========= ERROR MESSAGE ========= */
 .error-message {
   background: linear-gradient(135deg, rgba(220, 38, 38, 0.1) 0%, rgba(239, 68, 68, 0.08) 100%);
@@ -562,6 +607,16 @@
     align-items: center;
     padding: 4px 8px;
   }
+
+  .password-toggle-btn {
+    min-width: 44px;
+    min-height: 44px;
+    padding: 8px;
+  }
+
+  .password-toggle-btn:hover {
+    color: #9C27B0;
+  }
 }
 
 /* ===== High DPI / Retina Displays ===== */
@@ -575,8 +630,13 @@
 @media (prefers-reduced-motion: reduce) {
   .auth-button,
   .form-group input,
-  .auth-link {
+  .auth-link,
+  .password-toggle-btn {
     transition: none;
+  }
+
+  .password-toggle-btn:active {
+    transform: translateY(-50%);
   }
 }
 

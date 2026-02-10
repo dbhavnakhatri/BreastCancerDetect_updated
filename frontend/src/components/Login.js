@@ -64,7 +64,7 @@ function Login() {
 
           <div className="form-group">
             <label htmlFor="password">Password</label>
-            <div style={{ position: 'relative' }}>
+            <div className="password-input-wrapper">
               <input
                 type={showPassword ? "text" : "password"}
                 id="password"
@@ -73,27 +73,12 @@ function Login() {
                 placeholder="Enter your password"
                 autoComplete="current-password"
                 disabled={loading}
-                style={{ paddingRight: '45px' }}
+                className="password-input"
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                style={{
-                  position: 'absolute',
-                  right: '12px',
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                  background: 'none',
-                  border: 'none',
-                  cursor: 'pointer',
-                  color: '#9C27B0',
-                  display: 'flex',
-                  alignItems: 'center',
-                  padding: '4px',
-                  transition: 'color 0.2s ease'
-                }}
-                onMouseEnter={(e) => e.currentTarget.style.color = '#7B1FA2'}
-                onMouseLeave={(e) => e.currentTarget.style.color = '#9C27B0'}
+                className="password-toggle-btn"
                 disabled={loading}
                 aria-label={showPassword ? "Hide password" : "Show password"}
               >
