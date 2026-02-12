@@ -1,5 +1,4 @@
 /* ========= GLOBAL RESET ========= */
-*,
 *::before,
 *::after {
   box-sizing: border-box;
@@ -703,6 +702,7 @@ body.fullscreen-open {
     0 8px 32px rgba(0, 0, 0, 0.15),
     0 4px 16px rgba(0, 0, 0, 0.1);
   transition: all 0.3s ease;
+  
   overflow: hidden;
 }
 
