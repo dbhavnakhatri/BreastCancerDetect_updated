@@ -9,6 +9,12 @@ dist/
 build/
 *.egg
 
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
 # Environment variables
 .env
 .env.local
@@ -36,10 +42,12 @@ ENV/
 *.sqlite
 *.sqlite3
 
-# Testing
+# Images (backend test images)
+backend/*.png
+backend/*.jpg
+backend/*.jpeg
+backend/*.dcm
 test_images/
-
-*.dcm
 
 # Keep model file (tracked by Git LFS)
 !breast_cancer_model.keras
@@ -47,3 +55,4 @@ test_images/
 # Temporary files
 *.tmp
 *.bak
+
