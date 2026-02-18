@@ -38,9 +38,7 @@ ENV/
 
 # Testing
 test_images/
-*.jpg
-*.jpeg
-*.png
+
 *.dcm
 
 # Keep model file (tracked by Git LFS)
