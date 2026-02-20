@@ -29,6 +29,7 @@ from PIL import Image
 from grad_cam import create_gradcam_visualization, generate_mammogram_view_analysis
 from report_generator import generate_report_pdf
 from mammogram_validator import validate_mammogram_image
+from duplicate_detector import duplicate_detector
 
 # Database imports
 auth_router = None
@@ -641,6 +642,26 @@ async def health_check():
     }
 
 
+@app.post("/clear-duplicates")
+async def clear_duplicates():
+    """
+    Clear the duplicate detection cache.
+    Call this when starting a new analysis session to reset duplicate tracking.
+    """
+    try:
+        duplicate_detector.clear()
+        return {
+            "status": "success",
+            "message": "Duplicate detection cache cleared. Ready for new analysis session."
+        }
+    except Exception as e:
+        print(f"⚠️ Error clearing duplicates: {e}")
+        return {
+            "status": "error",
+            "message": f"Failed to clear cache: {e}"
+        }
+
+
 @app.post("/analyze")
 async def analyze_image(
     file: UploadFile = File(...),
@@ -662,6 +683,23 @@ async def analyze_image(
         image = Image.open(io.BytesIO(data)).convert("RGB")
     except Exception:
         raise HTTPException(status_code=400, detail="Unable to read image file.")
+    
+    # ⚠️ CHECK FOR DUPLICATES: Prevent analyzing the same image twice
+    try:
+        is_duplicate, duplicate_message = duplicate_detector.check_duplicate(data, image, file.filename)
+        if is_duplicate:
+            print(f"❌ DUPLICATE IMAGE REJECTED: {duplicate_message}")
+            raise HTTPException(
+                status_code=400,
+                detail=duplicate_message
+            )
+        print(f"✅ Image is unique - proceeding with analysis")
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"⚠️ Duplicate check error: {e}")
+        # Fail-safe: allow image through if duplicate check fails
+        print("⚠️ Duplicate check failed, proceeding anyway...")
     
     # ⚠️ CRITICAL: Validate that the image is actually a mammogram
     # This prevents analyzing photos of people and other non-medical images
