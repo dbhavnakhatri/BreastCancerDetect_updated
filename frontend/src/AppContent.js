@@ -8,6 +8,7 @@ import { useAuth } from "./context/AuthContext";
 import { useNavigate } from "react-router-dom";
 import FullComparisonView from "./components/FullComparisonView";
 import html2pdf from "html2pdf.js";
+import { getFileHash, getPerceptualHash, hammingDistance } from "./utils/imageHash";
 
 const getDefaultApiBase = () => {
   // Auto-detect: Use local backend when running on localhost
@@ -107,36 +108,33 @@ function AppContent() {
   // Save upload history to localStorage
   const saveToHistory = (fileName, fileData) => {
     const newEntry = {
-      id: Date.now(),
+      id: Date.now() + Math.random(),
       name: fileName,
       data: fileData,
       timestamp: new Date().toISOString()
     };
 
+    // Update state immediately
     setUploadHistory(prev => {
-      // Keep only last 5 entries
-      const updated = [newEntry, ...prev.filter(h => h.name !== fileName)].slice(0, 5);
-
+      const updated = [newEntry, ...prev].slice(0, 50);
+      
+      // Save to localStorage
       try {
         localStorage.setItem('uploadHistory', JSON.stringify(updated));
       } catch (error) {
-        // If storage quota exceeded, clear old data and try again
         if (error.name === 'QuotaExceededError') {
           console.warn('Storage quota exceeded, clearing old history...');
           try {
-            // Keep only the newest entry
-            const minimal = [newEntry];
+            const minimal = [newEntry, ...prev].slice(0, 10);
             localStorage.setItem('uploadHistory', JSON.stringify(minimal));
             return minimal;
           } catch (e) {
-            // If still fails, clear everything and continue without storage
             console.error('Failed to save to localStorage:', e);
             localStorage.removeItem('uploadHistory');
             return [newEntry];
           }
         }
       }
-
       return updated;
     });
   };
@@ -411,28 +409,82 @@ function AppContent() {
     navigate('/login');
   };
 
-  const handleFileChange = (e) => {
+  const handleFileChange = async (e) => {
     if (e.target.files && e.target.files.length > 0) {
       const selectedFiles = Array.from(e.target.files);
+      const filesToAdd = [];
+      const duplicateNames = [];
 
-      // Add to files array (support multiple files)
-      setFiles(prev => [...prev, ...selectedFiles]);
+      // Check each selected file for duplicates against already uploaded files
+      for (const selectedFile of selectedFiles) {
+        let isDuplicate = false;
 
-      // For backward compatibility, set first file
-      if (!file) {
-        setFile(selectedFiles[0]);
-      } else if (!secondFile && selectedFiles.length > 0) {
-        setSecondFile(selectedFiles[0]);
+        // Check against existing files
+        for (const existingFile of files) {
+          try {
+            const selectedHash = await getFileHash(selectedFile);
+            const existingHash = await getFileHash(existingFile);
+
+            if (selectedHash === existingHash) {
+              isDuplicate = true;
+              duplicateNames.push(`${selectedFile.name} (matches ${existingFile.name})`);
+              break;
+            }
+
+            // Also check perceptual hash for very similar images
+            const selectedPHash = await getPerceptualHash(selectedFile);
+            const existingPHash = await getPerceptualHash(existingFile);
+            const distance = hammingDistance(selectedPHash, existingPHash);
+
+            if (distance <= 5) {
+              isDuplicate = true;
+              duplicateNames.push(`${selectedFile.name} (very similar to ${existingFile.name})`);
+              break;
+            }
+          } catch (error) {
+            console.warn(`Could not compare ${selectedFile.name} with ${existingFile.name}:`, error);
+          }
+        }
+
+        if (!isDuplicate) {
+          filesToAdd.push(selectedFile);
+        }
       }
 
-      // Save all to history
-      selectedFiles.forEach(selectedFile => {
-        const reader = new FileReader();
-        reader.onload = () => {
-          saveToHistory(selectedFile.name, reader.result);
-        };
-        reader.readAsDataURL(selectedFile);
-      });
+      // Show warning if duplicates were found
+      if (duplicateNames.length > 0) {
+        setErrorMessage(
+          `⚠️ Duplicate image(s) rejected:\n${duplicateNames.join('\n')}\n\nYour model should not analyze the same image twice.`
+        );
+        setTimeout(() => setErrorMessage(""), 5000);
+      }
+
+      // Add non-duplicate files
+      if (filesToAdd.length > 0) {
+        setFiles(prev => [...prev, ...filesToAdd]);
+
+        // For backward compatibility, set first file
+        if (!file) {
+          setFile(filesToAdd[0]);
+        } else if (!secondFile && filesToAdd.length > 0) {
+          setSecondFile(filesToAdd[0]);
+        }
+
+        // Save all to history with base64 conversion
+        // Use Promise.all to ensure all files are converted before saving
+        Promise.all(
+          filesToAdd.map(selectedFile => {
+            return new Promise((resolve) => {
+              const reader = new FileReader();
+              reader.onload = () => {
+                saveToHistory(selectedFile.name, reader.result);
+                resolve();
+              };
+              reader.readAsDataURL(selectedFile);
+            });
+          })
+        );
+      }
     }
   };
 
@@ -473,10 +525,19 @@ function AppContent() {
   };
 
   // Clear all files
-  const clearAllFiles = () => {
+  const clearAllFiles = async () => {
     setFiles([]);
     setFile(null);
     setSecondFile(null);
+    
+    // Also clear duplicates on backend
+    try {
+      const endpoint = "/clear-duplicates";
+      const currentApiUrl = apiUrl(endpoint);
+      await fetch(currentApiUrl, { method: "POST" });
+    } catch (error) {
+      console.warn("Could not clear backend duplicates:", error);
+    }
   };
 
   // Helper function to extract view code from filename
