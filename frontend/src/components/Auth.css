@@ -652,3 +652,100 @@
     border: 1px solid #ddd;
   }
 }
+
+
+/* ========= DIVIDER ========= */
+.divider {
+  display: flex;
+  align-items: center;
+  margin: 24px 0;
+  gap: 12px;
+}
+
+.divider::before,
+.divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: rgba(255, 150, 220, 0.2);
+}
+
+.divider span {
+  color: #9C8A9E;
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+/* ========= GOOGLE SIGNUP BUTTON ========= */
+.google-signup-container {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  margin: 16px 0;
+}
+
+.google-signup-container > div {
+  width: 100% !important;
+}
+
+/* Style Google button */
+.google-signup-container button {
+  width: 100% !important;
+  height: 48px !important;
+  border-radius: 12px !important;
+  font-weight: 600 !important;
+  font-size: 1rem !important;
+  border: 2px solid rgba(255, 150, 220, 0.3) !important;
+  background: rgba(255, 255, 255, 0.9) !important;
+  color: #2D1B2E !important;
+  transition: all 0.3s ease !important;
+  box-shadow: 0 4px 12px rgba(255, 83, 192, 0.1) !important;
+}
+
+.google-signup-container button:hover {
+  background: rgba(255, 255, 255, 1) !important;
+  border-color: #FF53C0 !important;
+  box-shadow: 0 8px 20px rgba(255, 83, 192, 0.2) !important;
+  transform: translateY(-2px) !important;
+}
+
+.google-signup-container button:active {
+  transform: translateY(0) !important;
+}
+
+/* ========= DISABLED STATE ========= */
+.auth-button:disabled,
+.password-toggle-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.auth-button:disabled:hover {
+  transform: none;
+  box-shadow: 
+    0 10px 25px rgba(255, 83, 192, 0.3),
+    0 5px 12px rgba(255, 138, 201, 0.2);
+}
+
+/* ========= RESPONSIVE ========= */
+@media (max-width: 480px) {
+  .auth-card {
+    padding: 28px 20px;
+    border-radius: 16px;
+  }
+
+  .auth-header h1 {
+    font-size: 1.5rem;
+  }
+
+  .form-group {
+    margin-bottom: 16px;
+  }
+
+  .auth-button,
+  .google-signup-container button {
+    font-size: 0.95rem !important;
+    padding: 12px !important;
+  }
+}

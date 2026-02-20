@@ -86,6 +86,50 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  // Google OAuth signup
+  const googleSignup = async (googleToken) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/google`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ token: googleToken }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        return { success: false, error: error.detail || 'Google signup failed' };
+      }
+
+      const data = await response.json();
+      const accessToken = data.access_token;
+
+      // Get user info
+      const userResponse = await fetch(`${API_BASE_URL}/auth/me`, {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+        },
+      });
+
+      if (!userResponse.ok) {
+        return { success: false, error: 'Failed to get user info' };
+      }
+
+      const userData = await userResponse.json();
+
+      setToken(accessToken);
+      setUser(userData);
+      sessionStorage.setItem('token', accessToken);
+      sessionStorage.setItem('user', JSON.stringify(userData));
+
+      return { success: true };
+    } catch (error) {
+      console.error('Google signup error:', error);
+      return { success: false, error: 'Network error. Please try again.' };
+    }
+  };
+
   const logout = () => {
     setUser(null);
     setToken(null);
@@ -98,6 +142,7 @@ export const AuthProvider = ({ children }) => {
     token,
     login,
     signup,
+    googleSignup,
     logout,
     loading
   };

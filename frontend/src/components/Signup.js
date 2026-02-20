@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { FiEye, FiEyeOff } from 'react-icons/fi';
@@ -13,8 +13,35 @@ function Signup() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const { signup } = useAuth();
+  const { signup, googleSignup } = useAuth();
   const navigate = useNavigate();
+
+  // Load Google Sign-In script
+  useEffect(() => {
+    const script = document.createElement('script');
+    script.src = 'https://accounts.google.com/gsi/client';
+    script.async = true;
+    script.defer = true;
+    document.head.appendChild(script);
+
+    return () => {
+      document.head.removeChild(script);
+    };
+  }, []);
+
+  // Initialize Google Sign-In button
+  useEffect(() => {
+    if (window.google) {
+      window.google.accounts.id.initialize({
+        client_id: process.env.REACT_APP_GOOGLE_CLIENT_ID,
+        callback: handleGoogleSignup,
+      });
+      window.google.accounts.id.renderButton(
+        document.getElementById('google-signup-btn'),
+        { theme: 'outline', size: 'large', width: '100%' }
+      );
+    }
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -43,6 +70,26 @@ function Signup() {
       navigate('/upload');
     } else {
       setError(result.error || 'Signup failed');
+    }
+  };
+
+  const handleGoogleSignup = async (response) => {
+    setError('');
+    setLoading(true);
+    
+    try {
+      const result = await googleSignup(response.credential);
+      setLoading(false);
+
+      if (result.success) {
+        navigate('/upload');
+      } else {
+        setError(result.error || 'Google signup failed');
+      }
+    } catch (err) {
+      setLoading(false);
+      setError('Google signup error. Please try again.');
+      console.error('Google signup error:', err);
     }
   };
 
@@ -141,6 +188,14 @@ function Signup() {
           <button type="submit" className="auth-button" disabled={loading}>
             {loading ? 'Creating Account...' : 'Sign Up'}
           </button>
+
+          {/* Divider */}
+          <div className="divider">
+            <span>OR</span>
+          </div>
+
+          {/* Google Sign-Up Button */}
+          <div id="google-signup-btn" className="google-signup-container"></div>
 
           <div className="auth-footer">
             <p>

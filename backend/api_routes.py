@@ -6,6 +6,9 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import timedelta
 import json
+import os
+from google.auth.transport import requests
+from google.oauth2 import id_token
 
 from database import get_db, User, Patient, Analysis, Report, AuditLog
 from schemas import (
@@ -133,6 +136,103 @@ async def login_json(user_data: UserLogin, request: Request, db: Session = Depen
     db.commit()
     
     return {"access_token": access_token, "token_type": "bearer"}
+
+
+@auth_router.post("/google", response_model=Token)
+async def google_signup(request: Request, db: Session = Depends(get_db)):
+    """Google OAuth signup/login"""
+    try:
+        body = await request.json()
+        token = body.get("token")
+        
+        if not token:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Google token is required"
+            )
+        
+        # Verify Google token
+        google_client_id = os.getenv("GOOGLE_CLIENT_ID")
+        if not google_client_id:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Google OAuth not configured"
+            )
+        
+        try:
+            idinfo = id_token.verify_oauth2_token(token, requests.Request(), google_client_id)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid Google token"
+            )
+        
+        # Extract user info from Google token
+        email = idinfo.get("email")
+        name = idinfo.get("name", email.split("@")[0])
+        
+        if not email:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email not found in Google token"
+            )
+        
+        # Check if user exists
+        user = db.query(User).filter(User.email == email).first()
+        
+        if not user:
+            # Create new user with random password (they'll use Google OAuth)
+            import secrets
+            random_password = secrets.token_urlsafe(32)
+            user = create_user(db, email, name, random_password)
+            
+            # Log the signup
+            ip_address = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+            if not ip_address:
+                ip_address = request.client.host if request.client else "unknown"
+            
+            audit = AuditLog(
+                user_id=user.id, 
+                action="signup_google", 
+                details="New user registered via Google OAuth",
+                ip_address=ip_address,
+                user_agent=request.headers.get("user-agent", "")[:500]
+            )
+            db.add(audit)
+        else:
+            # Log the login
+            ip_address = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+            if not ip_address:
+                ip_address = request.client.host if request.client else "unknown"
+            
+            audit = AuditLog(
+                user_id=user.id, 
+                action="login_google", 
+                details="User logged in via Google OAuth",
+                ip_address=ip_address,
+                user_agent=request.headers.get("user-agent", "")[:500]
+            )
+            db.add(audit)
+        
+        db.commit()
+        
+        # Create access token
+        access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        access_token = create_access_token(
+            data={"sub": user.email, "user_id": user.id},
+            expires_delta=access_token_expires
+        )
+        
+        return {"access_token": access_token, "token_type": "bearer"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Google OAuth error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Google authentication failed"
+        )
 
 
 @auth_router.get("/me", response_model=UserResponse)
