@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { FiEye, FiEyeOff } from 'react-icons/fi';
@@ -29,6 +29,27 @@ function Signup() {
     };
   }, []);
 
+  // Handle Google Sign-Up callback
+  const handleGoogleSignup = useCallback(async (response) => {
+    setError('');
+    setLoading(true);
+    
+    try {
+      const result = await googleSignup(response.credential);
+      setLoading(false);
+
+      if (result.success) {
+        navigate('/upload');
+      } else {
+        setError(result.error || 'Google signup failed');
+      }
+    } catch (err) {
+      setLoading(false);
+      setError('Google signup error. Please try again.');
+      console.error('Google signup error:', err);
+    }
+  }, [googleSignup, navigate]);
+
   // Initialize Google Sign-In button
   useEffect(() => {
     if (window.google) {
@@ -41,7 +62,7 @@ function Signup() {
         { theme: 'outline', size: 'large', width: '100%' }
       );
     }
-  }, []);
+  }, [handleGoogleSignup]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
