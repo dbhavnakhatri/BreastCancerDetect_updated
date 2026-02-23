@@ -43,9 +43,7 @@ ENV/
 *.sqlite3
 
 # Images (backend test images)
-backend/*.png
-backend/*.jpg
-backend/*.jpeg
+
 backend/*.dcm
 test_images/
 
