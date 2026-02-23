@@ -1284,13 +1284,13 @@ function AppContent() {
   return (
     <div className="App">
       <video autoPlay muted loop id="bg-video">
-        <source src="/backgroundpink.mp4" type="video/mp4" />
+        <source src="/breast-cancer/backgroundpink.mp4" type="video/mp4" />
       </video>
       <div className="bg-overlay" />
 
       <header className="header">
         <div className="logo">
-          <img src="/logo.png" alt="logo" />
+          <img src="/breast-cancer/logo.png" alt="logo" />
           <span>Breast Cancer Detection System</span>
         </div>
         <div className="header-right">
