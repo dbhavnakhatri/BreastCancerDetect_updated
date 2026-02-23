@@ -94,26 +94,6 @@ function Signup() {
     }
   };
 
-  const handleGoogleSignup = async (response) => {
-    setError('');
-    setLoading(true);
-    
-    try {
-      const result = await googleSignup(response.credential);
-      setLoading(false);
-
-      if (result.success) {
-        navigate('/upload');
-      } else {
-        setError(result.error || 'Google signup failed');
-      }
-    } catch (err) {
-      setLoading(false);
-      setError('Google signup error. Please try again.');
-      console.error('Google signup error:', err);
-    }
-  };
-
   return (
     <div className="auth-container">
       <video autoPlay muted loop id="bg-video">
